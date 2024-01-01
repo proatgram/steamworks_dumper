@@ -367,7 +367,7 @@ size_t ClientInterfaceDumper::FindClientInterfaces()
             && vtName.find("Map") != std::string_view::npos
             && vtName.find("Base") == std::string_view::npos
           )
-        {c
+        {
             for(auto cit = consts->cbegin(); cit != consts->cend(); ++cit)
             {
                 if(*(int32_t*)(m_image + cit->first - 4) == *it)
