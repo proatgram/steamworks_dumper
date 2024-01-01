@@ -35,6 +35,10 @@ public:
 
     cs_x86*& operator[](int32_t t_offset);
 
+    /**
+     * @brief Prints some info about the RandomAccessStack to cout. Can segfault sometimes...
+     */
+    void Print();
 private:
     int32_t m_offset;
     int32_t m_offsetBackup;

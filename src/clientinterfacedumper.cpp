@@ -10,7 +10,8 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     m_txtShdr(nullptr),
     m_roShdr(nullptr),
     m_sendSerializedFnOffset(-1),
-    m_clientApiInitGlobal(-1)
+    m_clientApiInitGlobal(-1),
+    m_utlbufferPutByte(-1)
 {
     m_relRoShdr = t_module->GetSectionHeader(".data.rel.ro");
     m_relRoLocalShdr = t_module->GetSectionHeader(".data.rel.ro.local");
@@ -22,6 +23,12 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
         "xxxxxx????xx????xxx????xxxxx????xxxxx????xx????"
     );
 
+    // CUtlBuffer* this, byte
+    m_utlbufferPutByte = t_module->FindSignature(
+        "\xE8\x00\x00\x00\x00\x81\xC2\x00\x00\x00\x00\x57\x56\x53\x83\xEC\x00\x65\x00\x00\x00\x00\x00\x00\x44\x00\x00\x31\xC0\x8B\x00\x00\x00\x8B\x00\x00\x00\x0F\x00\x00\x00\xA8\x01\x75\x00\x0F\x00\x00\x00\x83\xE0\x00\x83\xE2\x00\x08\xC2\x75\x00\xBA\x01",
+        "x????xx????xxxxx?x??????x??xxx???x???x???xxx?x???xx?xx?xxx?xx"
+    );
+
     m_clientApiInitGlobal = t_module->FindSignature("\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x0C\x8B\x83\x00\x00\x00\x00\x8B\x10\xFF\xB3\x00\x00\x00\x00\xFF\xB3\x00\x00\x00\x00\x50\xFF\x52\x20",
         "xx????xx????xxxxx????xxxx????xx????xxxx"
     );
@@ -29,6 +36,11 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     if(m_sendSerializedFnOffset == -1)
     {
         std::cout << "Could not find SendSerializedFunction offset!" << std::endl;
+    }
+
+    if(m_utlbufferPutByte == -1)
+    {
+        std::cout << "Could not find CUtlBuffer::PutByte offset!" << std::endl;
     }
 
     if(m_clientApiInitGlobal == -1)
@@ -42,7 +54,7 @@ ClientInterfaceDumper::~ClientInterfaceDumper()
 
 }
 
-bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_offset, size_t* t_argc, std::string* t_name)
+bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_offset, size_t* t_argc, std::string* t_name, uint8_t* interfaceid, uint32_t* functionid, uint32_t* fencepost)
 {
     size_t funcSize = m_module->GetFunctionSize(t_offset);
     if(funcSize == -1)
@@ -54,6 +66,10 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
     cs_insn *ins;
     size_t count;
     std::set<int32_t> args;
+    bool hasSetFunctionId = false;
+    bool hasSetFencepost = false;
+    bool hasSetInterfaceId = false;
+    bool isFirstUtlbufWrite = true;
 
     if(cs_open(CS_ARCH_X86, CS_MODE_32, &csHandle) == CS_ERR_OK)
     {
@@ -87,6 +103,21 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                     case X86_INS_LEA:
                     case X86_INS_MOV:
                     {
+                        // This is hacky and terrible.
+                        if (ins[i].id == X86_INS_MOV && x86->operands[1].type == X86_OP_IMM) {
+                            if (!hasSetFencepost && x86->operands[1].mem.base == X86_REG_INVALID && x86->operands[1].imm <= UINT32_MAX && x86->operands[1].imm > 255 && x86->operands[1].imm != *functionid) {
+                                if (hasSetFunctionId) {
+                                    *fencepost = x86->operands[1].imm;
+                                    hasSetFencepost = true;
+                                }
+                                else
+                                {
+                                    *functionid = x86->operands[1].imm;
+                                    hasSetFunctionId = true;
+                                }
+                            }
+                        }
+
                         if(x86->operands[1].type == X86_OP_MEM)
                         {
                             if( x86->operands[1].mem.base == X86_REG_EBP
@@ -100,6 +131,7 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                                 args.insert(x86->disp);
                             }
                         }
+
                         break;
                     }
                     case X86_INS_CALL:
@@ -116,6 +148,33 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                                 }
                             }
                         }
+                        
+                        if (x86->operands[0].imm == m_utlbufferPutByte) {
+                            if (!hasSetInterfaceId)
+                            {
+                                // Skip the first write, as it is the IPC command code
+                                if (isFirstUtlbufWrite) {
+                                    isFirstUtlbufWrite = false;
+                                    break;
+                                }
+
+                                int32_t stackOffset = ras.GetOffset();
+                                auto byte = ras[stackOffset - 4]->operands[0].imm;
+
+                                if (byte == 0) {
+                                    throw std::runtime_error("0 is not a valid interface ID.");
+                                }
+
+                                if (byte > 64) {
+                                    // Change this when there are more than 64 interface ID's used.
+                                    // Don't change it to crazy values like 200 though, since this is useful to keep as a sanity check.
+                                    throw std::runtime_error("Max interface id is 64. The current ID '" + std::to_string(byte) + "' is too high. ");
+                                }
+
+                                hasSetInterfaceId = true;
+                                *interfaceid = (uint8_t)byte;
+                            }
+                        }
 
                         break;
                     }
@@ -127,6 +186,10 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
     cs_close(&csHandle);
 
     *t_argc = args.size();
+
+    if (*functionid == 0 || *fencepost == 0) {
+        std::cout << "WARNING: No IPC info for function " + t_iname + "::" + *t_name << std::endl;
+    }
 
     return true;
 }
@@ -262,8 +325,11 @@ void ClientInterfaceDumper::ParseVTable(std::string t_typeName, size_t t_vtoffse
         std::string fName;
         size_t fArgc = 0;
         InterfaceFunction func;
+        uint8_t interfaceId = 0;
+        uint32_t functionid = 0;
+        uint32_t fencepost = 0;
 
-        if(!GetSerializedFuncInfo(t_typeName, vtFuncs[vmIdx], &fArgc, &fName) || fName.empty())
+        if(!GetSerializedFuncInfo(t_typeName, vtFuncs[vmIdx], &fArgc, &fName, &interfaceId, &functionid, &fencepost) || fName.empty())
         {
             fName = "Unknown_" + std::to_string(vmIdx);
         }
@@ -271,6 +337,9 @@ void ClientInterfaceDumper::ParseVTable(std::string t_typeName, size_t t_vtoffse
         func.m_addr = vtFuncs[vmIdx];
         func.m_argc = fArgc;
         func.m_name = fName;
+        func.m_interfaceid = interfaceId;
+        func.m_functionid = functionid;
+        func.m_fencepost = fencepost;
         m_interfaces[t_typeName].m_functions.push_back(func);
 
         ++vmIdx;
@@ -294,16 +363,21 @@ size_t ClientInterfaceDumper::FindClientInterfaces()
     {
         size_t strOffset = *(int32_t*)(m_image + *it + 4);
         std::string_view vtName(m_image + strOffset);
-        if(    vtName.find("IClient") != std::string_view::npos
+        if((vtName.find("IClient") != std::string_view::npos || vtName.find("IRegistry") != std::string_view::npos)
             && vtName.find("Map") != std::string_view::npos
             && vtName.find("Base") == std::string_view::npos
           )
-        {
+        {c
             for(auto cit = consts->cbegin(); cit != consts->cend(); ++cit)
             {
                 if(*(int32_t*)(m_image + cit->first - 4) == *it)
                 {
-                    std::string iname(vtName.substr(vtName.find("IClient")));
+                    auto startIndex = vtName.find("IClient");
+                    if (startIndex == std::string_view::npos) {
+                        startIndex = vtName.find("IRegistry");
+                    }
+
+                    std::string iname(vtName.substr(startIndex));
                     m_interfaces[iname].m_foundAt = cit->first;
                     ParseVTable(iname, cit->first);
                 }

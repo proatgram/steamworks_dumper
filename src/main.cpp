@@ -75,7 +75,11 @@ void DumpInterfaces(ClientModule* t_module, const std::string& t_outPath, bool t
             {
                 out << "        {" << std::endl;
                 out << "            \"name\": \"" << vtIt->m_name << "\"," << std::endl;
-                out << "            \"argc\": \"" << vtIt->m_argc << "\"";
+                out << "            \"argc\": \"" << vtIt->m_argc << "\"," << std::endl;
+                // This duplicates some data, but it's fine since can't really extract interface ids from anywhere else except the function's IPC serialization
+                out << "            \"interfaceid\": \"" << (int32_t)vtIt->m_interfaceid << "\"," << std::endl;
+                out << "            \"functionid\": \"" << vtIt->m_functionid << "\"," << std::endl;
+                out << "            \"fencepost\": \"" << vtIt->m_fencepost << "\"";
                 if(t_includeOffsets)
                 {
                     out << "," << std::endl;
