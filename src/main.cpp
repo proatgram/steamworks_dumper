@@ -79,12 +79,38 @@ void DumpInterfaces(ClientModule* t_module, const std::string& t_outPath, bool t
                 // This duplicates some data, but it's fine since can't really extract interface ids from anywhere else except the function's IPC serialization
                 out << "            \"interfaceid\": \"" << (int32_t)vtIt->m_interfaceid << "\"," << std::endl;
                 out << "            \"functionid\": \"" << vtIt->m_functionid << "\"," << std::endl;
-                out << "            \"fencepost\": \"" << vtIt->m_fencepost << "\"";
+                out << "            \"fencepost\": \"" << vtIt->m_fencepost << "\"," << std::endl;
+                out << "            \"cannotcallincrossprocess\": \"" << (int32_t)vtIt->m_cannotcallincrossprocess << "\"," << std::endl;
+                out << "            \"serializedreturn\": \"" << vtIt->m_serializedreturn << "\"," << std::endl;
                 if(t_includeOffsets)
                 {
-                    out << "," << std::endl;
-                    out << "            \"addr\": \"0x" << std::hex << vtIt->m_addr << std::dec << "\"";
+                    out << "            \"addr\": \"0x" << std::hex << vtIt->m_addr << std::dec << "\"," << std::endl;
                 }
+
+                out << "            \"serializedargs\": [" << std::endl;
+                for(auto it = vtIt->m_serializedargs.cbegin(); it != vtIt->m_serializedargs.cend(); ++it)
+                {
+                    out << "                \"" << *it << "\"";
+                    if(std::next(it) != vtIt->m_serializedargs.cend())
+                    {
+                        out << ",";
+                    }
+                    out << std::endl;
+                }
+                out << "            ]," << std::endl;
+
+                out << "            \"serializedreturns\": [" << std::endl;
+                for(auto it = vtIt->m_serializedreturns.cbegin(); it != vtIt->m_serializedreturns.cend(); ++it)
+                {
+                    out << "                \"" << *it << "\"";
+                    if(std::next(it) != vtIt->m_serializedreturns.cend())
+                    {
+                        out << ",";
+                    }
+                    out << std::endl;
+                }
+                out << "            ]";
+
                 out << std::endl;
                 out << "        }";
 

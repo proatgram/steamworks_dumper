@@ -3,6 +3,7 @@
 #include <string>
 #include <iostream>
 #include <set>
+#include <cctype>
 
 ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     DumperBase(t_module),
@@ -11,7 +12,20 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     m_roShdr(nullptr),
     m_sendSerializedFnOffset(-1),
     m_clientApiInitGlobal(-1),
-    m_utlbufferPutByte(-1)
+    m_utlbufferPutByte(-1),
+    m_utlbufferGetBytes(-1),
+    m_utlbufferPutBytes(-1),
+    m_logIPCCallFailure(-1),
+    m_steamFree(-1),
+    m_utlbufferGetUnsignedInt64Offset(-1),
+    m_utlbufferPutString(-1),
+    m_utlbufferGetString(-1),
+    m_assertCannotCallInCrossProcess(-1),
+    m_utlbufferPutUnsignedInt64Offset(-1),
+    m_utlbufferGetUtlbuffer(-1),
+    m_utlbufferPutUtlbuffer(-1),
+    m_utlbufferPutProtobuf(-1),
+    m_utlbufferPutUtlvector(-1)
 {
     m_relRoShdr = t_module->GetSectionHeader(".data.rel.ro");
     m_relRoLocalShdr = t_module->GetSectionHeader(".data.rel.ro.local");
@@ -29,6 +43,73 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
         "x????xx????xxxxx?x??????x??xxx???x???x???xxx?x???xx?xx?xxx?xx"
     );
 
+    // CUtlBuffer* this, void*, int length
+    m_utlbufferPutBytes = t_module->FindSignature(
+        "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x85\xFF\x7F",
+        "xxxxx????xx????xx?x???x???x???xxx"
+    );
+
+    m_utlbufferGetBytes = t_module->FindSignature(
+        "\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x8B\x00\x00\x2B\x00\x00\x39",
+        "xxx????xx????xx?x???x???x???x??x??x"
+    );
+
+    // const char*, const char*, int
+    m_logIPCCallFailure = t_module->FindSignature(
+        "\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x0F\x00\x00\x00\x00\x50\x00\x00\x00\x00\x8D",
+        "xx????xx????xx?x????x????x"
+    );
+
+    m_steamFree = t_module->FindSignature(
+        "\xE8\x00\x00\x00\x00\x81\xC2\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x85\xC9",
+        "x????xx????xx?x???x??xx"
+    );
+
+    // CUtlBuffer* this, uint64_t* out
+    m_utlbufferGetUnsignedInt64Offset = t_module->FindSignature(
+        "\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x8B\x00\x00\x2B",
+        "xxx????xx????xx?x???x???x??x"
+    );
+
+    m_utlbufferPutUnsignedInt64Offset = t_module->FindSignature(
+        "\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\xF3\x00\x00\x00\x00\x00\x00\x0F\x00\x00\x00\x00\x6A", 
+        "xx????xx????xx?x??????x????x"
+    );
+
+    m_utlbufferGetProtobuf = t_module->FindSignature(
+        "\x57\x56\x53\x8B\x74\x24\x10\x00\x00\x00\x00\x00\x81\xC3\x64\x99\xA0\x01\x83\xEC\x0C\x56\x00\x00\x00\x00\x00\x83\xC4\x0C\x50", 
+        "xxxxxxx?????xxxxxxxxxx?????xxxx"
+    );
+
+    m_utlbufferPutProtobuf = t_module->FindSignature(
+        "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x8B\x00\x00\x8D\x00\x00\x00\x00\x00\x8B\x00\x00\x39\xD0\x75\x00\x8B", 
+        "xxxxx????xx????xx?x???x???x??x?????x??xxx?x"
+    );
+
+    m_utlbufferGetUtlbuffer = t_module->FindSignature(
+        "\x57\x56\x53\x8B\x74\x24\x10\x00\x00\x00\x00\x00\x81\xC3\x94\x98\xA0\x01\x83\xEC\x0C\x56\x00\x00\x00\x00\x00\x83\xC4\x0C\x50\x89\xC7", 
+        "xxxxxxx?????xxxxxxxxxx?????xxxxxx"
+    );
+
+    m_utlbufferPutUtlbuffer = t_module->FindSignature(
+        "\x57\x56\x53\x8B\x74\x24\x14\x00\x00\x00\x00\x00\x81\xC3\xD4\x98\xA0\x01\x8B\x7C\x24\x10\x83\xEC\x08\xFF\x76\x14\x57\x00\x00\x00\x00\x00\x83\xC4", 
+        "xxxxxxx?????xxxxxxxxxxxxxxxxx?????xx"
+    );
+
+    m_utlbufferPutSteamNetworkingIdentity = t_module->FindSignature(
+        "\x57\x56\x53\x8B\x00\x00\x00\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x8B\x00\x00\x00\x85\xFF\x74\x00\x83\xEC\x00\x68", 
+        "xxxx???x????xx????x???xxx?xx?x"
+    );
+
+    m_utlbufferPutUtlvector = t_module->FindSignature(
+        "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x85\xED\x74\x00\x8B", 
+        "xxxxx????xx????xx?x???xxx?x"
+    );
+
+    // Can't find a signature for this. Instead we do a janky hack
+    // CUtlBuffer* this, const char* str
+    //m_utlbufferPutString = t_module->FindSignature();
+
     m_clientApiInitGlobal = t_module->FindSignature("\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x0C\x8B\x83\x00\x00\x00\x00\x8B\x10\xFF\xB3\x00\x00\x00\x00\xFF\xB3\x00\x00\x00\x00\x50\xFF\x52\x20",
         "xx????xx????xxxxx????xxxx????xx????xxxx"
     );
@@ -43,6 +124,66 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
         std::cout << "Could not find CUtlBuffer::PutByte offset!" << std::endl;
     }
 
+    if(m_utlbufferPutBytes == -1)
+    {
+        std::cout << "Could not find CUtlBuffer::PutBytes offset!" << std::endl;
+    }
+
+    if(m_utlbufferGetBytes == -1)
+    {
+        std::cout << "Could not find CUtlBuffer::GetBytes offset!" << std::endl;
+    }
+
+    if (m_logIPCCallFailure == -1) 
+    {
+        std::cout << "Could not find LogIPCCallFailure offset!" << std::endl;
+    }
+
+    if (m_steamFree == -1) 
+    {
+        std::cout << "Could not find SteamFree offset!" << std::endl;
+    }
+
+    if (m_utlbufferGetUnsignedInt64Offset == -1) 
+    {
+        std::cout << "Could not find CUtlBuffer::GetUnsignedInt64 offset!" << std::endl;
+    }
+
+    if (m_utlbufferPutUnsignedInt64Offset == -1) 
+    {
+        std::cout << "Could not find CUtlBuffer::PutUnsignedInt64 offset!" << std::endl;
+    }
+
+    if (m_utlbufferGetProtobuf == -1) 
+    {
+        std::cout << "Could not find CUtlBuffer::GetProtobuf offset!" << std::endl;
+    }
+
+    if (m_utlbufferPutProtobuf == -1)
+    {
+        std::cout << "Could not find CUtlBuffer::PutProtobuf offset!" << std::endl;
+    }
+
+    if (m_utlbufferGetUtlbuffer == -1) 
+    {
+        std::cout << "Could not find CUtlBuffer::GetUtlBuffer offset!" << std::endl;
+    }
+
+    if (m_utlbufferPutUtlbuffer == -1) 
+    {
+        std::cout << "Could not find CUtlBuffer::PutUtlBuffer offset!" << std::endl;
+    }
+
+    if (m_utlbufferPutSteamNetworkingIdentity == -1) 
+    {
+        std::cout << "Could not find CUtlBuffer::PutSteamNetworkingIdentity offset!" << std::endl;
+    }
+
+    if (m_utlbufferPutUtlvector == -1)
+    {
+        std::cout << "Could not find CUtlBuffer::PutCUtlVector offset!" << std::endl;
+    } 
+
     if(m_clientApiInitGlobal == -1)
     {
         std::cout << "Could not find ClientAPI_Init offset..." << std::endl;
@@ -54,7 +195,7 @@ ClientInterfaceDumper::~ClientInterfaceDumper()
 
 }
 
-bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_offset, size_t* t_argc, std::string* t_name, uint8_t* interfaceid, uint32_t* functionid, uint32_t* fencepost)
+bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_offset, size_t* t_argc, std::string* t_name, uint8_t* interfaceid, uint32_t* functionid, uint32_t* fencepost, std::vector<std::string>* serializedArgs, std::vector<std::string>* serializedReturns, std::string *serializedReturn, bool *cannotCallInCrossProcess)
 {
     size_t funcSize = m_module->GetFunctionSize(t_offset);
     if(funcSize == -1)
@@ -70,6 +211,10 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
     bool hasSetFencepost = false;
     bool hasSetInterfaceId = false;
     bool isFirstUtlbufWrite = true;
+    bool isInResultDeserialization = false;
+    bool hasSkippedFunctionIDFunc = false;
+    bool isInArgsDeserialization = false;
+    bool haveDeserializedArgs = false;
 
     if(cs_open(CS_ARCH_X86, CS_MODE_32, &csHandle) == CS_ERR_OK)
     {
@@ -78,11 +223,13 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
         RandomAccessStack ras;
 
-        count = cs_disasm(csHandle, (uint8_t*)(m_image + t_offset), funcSize, t_offset, 0, &ins);
+        std::cout << std::endl;
+        count = cs_disasm(csHandle, (uint8_t *)(m_image + t_offset), funcSize, t_offset, 0, &ins);
         if(count > 0)
         {
             for (size_t i = 0; i < count; i++)
             {
+                printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
                 cs_x86* x86 = &ins[i].detail->x86;
 
                 ras.Update(&ins[i]);
@@ -134,11 +281,43 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
                         break;
                     }
+
+                    case X86_INS_TEST:
+                    {
+                        if (isInResultDeserialization) {
+                            isInResultDeserialization = false;
+                            haveDeserializedArgs = true;
+                        }
+                        break;
+                    }
+
                     case X86_INS_CALL:
                     {
+                        if (CheckIfAssertCannotCallInCrossProcessFunc(csHandle, x86->operands[0].imm)) {
+                            *cannotCallInCrossProcess = true;
+                        }
+
+                        if (hasSetFunctionId && hasSetFencepost && !haveDeserializedArgs) {
+                            if (x86->operands[0].imm == m_steamFree) {
+                                std::cout << "SteamFree" << std::endl;
+                                isInResultDeserialization = true;
+                                break;
+                            }
+                        }
+
+                        if (isInResultDeserialization) {
+                            if (x86->operands[0].imm == m_logIPCCallFailure) {
+                                std::cout << "LogIPCCallFailure" << std::endl;
+                                isInResultDeserialization = false;
+                                haveDeserializedArgs = true;
+                                break;
+                            }
+                        }
+
                         if(x86->operands[0].imm == m_sendSerializedFnOffset)
                         {
-                            if(ras.Size() > 4)
+                            std::cout << "SendSerialized" << std::endl;
+                            if (ras.Size() > 4)
                             {
                                 int32_t stackOffset = ras.GetOffset();
                                 size_t nameOffset = m_constBase + ras[stackOffset - 16]->disp;
@@ -150,6 +329,7 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                         }
                         
                         if (x86->operands[0].imm == m_utlbufferPutByte) {
+                            std::cout << "PutByte" << std::endl;
                             if (!hasSetInterfaceId)
                             {
                                 // Skip the first write, as it is the IPC command code
@@ -176,6 +356,107 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                             }
                         }
 
+                        // Handle arguments
+                        if (hasSetFunctionId && !hasSetFencepost) {
+args_start_of_if:
+                            if (CheckIfAssertCannotCallInCrossProcessFunc(csHandle, x86->operands[0].imm)) {
+                                *cannotCallInCrossProcess = true;
+                                break;
+                            } else if (x86->operands[0].imm == m_utlbufferPutByte) {
+                                serializedArgs->push_back(std::string("byte"));
+                            } else if (x86->operands[0].imm == m_utlbufferPutBytes) {
+                                std::cout << "PutBytes" << std::endl;
+                                if (hasSkippedFunctionIDFunc) {
+                                    int32_t stackOffset = ras.GetOffset();
+                                    std::string as_str = "unknown";
+                                    if (ras[stackOffset - 8]->operands[0].type == x86_op_type::X86_OP_IMM)
+                                    {
+                                        auto byteCount = ras[stackOffset - 8]->operands[0].imm;
+                                        as_str = std::string("bytes") + std::to_string(byteCount);
+                                    } else if (ras[stackOffset - 8]->operands[0].type == x86_op_type::X86_OP_MEM) {
+                                        as_str = std::string("bytes_length_from_mem");
+                                    } else if (ras[stackOffset - 8]->operands[0].type == x86_op_type::X86_OP_REG) {
+                                        as_str = std::string("bytes_length_from_reg");
+                                    }
+                                    serializedArgs->push_back(std::string(as_str));
+                                } else {
+                                    hasSkippedFunctionIDFunc = true;
+                                }
+                            } else if (x86->operands[0].imm == m_utlbufferPutString) {
+                                serializedArgs->push_back(std::string("string"));  
+                            } else if (x86->operands[0].imm == m_utlbufferPutUnsignedInt64Offset) {
+                                serializedArgs->push_back(std::string("uint64"));
+                            } else if (x86->operands[0].imm == m_utlbufferPutUtlbuffer) {
+                                serializedArgs->push_back(std::string("utlbuffer"));
+                            } else if (x86->operands[0].imm == m_utlbufferPutProtobuf) {
+                                serializedArgs->push_back(std::string("protobuf"));
+                            } else if (x86->operands[0].imm == m_utlbufferPutSteamNetworkingIdentity) {
+                                serializedArgs->push_back(std::string("steamnetworkingidentity"));
+                            } else if (x86->operands[0].imm == m_utlbufferPutUtlvector) {
+                                serializedArgs->push_back(std::string("utlvector"));
+                            } else {
+                                if (CheckIfPutStringFunc(csHandle, x86->operands[0].imm)) {
+                                    goto args_start_of_if;
+                                }
+                                serializedArgs->push_back(std::string("unknown"));
+                            }
+                        }
+
+                        // Handle returns
+                        if (isInResultDeserialization) {
+result_start_of_if:
+                            if (x86->operands[0].imm == m_utlbufferGetBytes) {
+                                std::cout << "GetBytes" << std::endl;
+                                int32_t stackOffset = ras.GetOffset();
+                                auto byteCount = ras[stackOffset - 8]->operands[0].imm;
+                                auto as_str = std::string("bytes") + std::to_string(byteCount);
+                                bool inferredType = false;
+                                
+                                switch (ras[stackOffset - 8]->operands[0].type)
+                                {
+                                    case x86_op_type::X86_OP_MEM:
+                                        as_str = std::string("bytes_length_from_mem");
+                                        break;
+
+                                    case x86_op_type::X86_OP_REG:
+                                        as_str = std::string("bytes_length_from_reg");
+                                        break;
+                                    
+                                    default:
+                                        break;
+                                }
+
+                                // More than likely a boolean if the name follows this format B[uppercase letter] (side note: this is terrible)
+                                if (!inferredType && as_str == "bytes1" && !t_name->empty() && t_name->length() > 2 && (*t_name)[0] == 'B' && std::isupper(static_cast<unsigned char>((*t_name)[1]))) {
+                                    as_str = "boolean";
+                                    inferredType = true;
+                                }
+
+                                // Also likely a boolean if the name starts with "Is"
+                                if (!inferredType && as_str == "bytes1" && !t_name->empty() && t_name->length() > 2 && (*t_name)[0] == 'I' && (*t_name)[1] == 's') {
+                                    as_str = "boolean";
+                                    inferredType = true;
+                                }
+
+                                serializedReturns->push_back(as_str);
+                            } else if (x86->operands[0].imm == m_utlbufferGetUnsignedInt64Offset) {
+                                std::cout << "GetUnsignedInt64" << std::endl;
+                                serializedReturns->push_back(std::string("uint64"));
+                            } else if (x86->operands[0].imm == m_utlbufferGetString) {
+                                serializedReturns->push_back(std::string("string"));  
+                            } else if (x86->operands[0].imm == m_utlbufferGetProtobuf) {
+                                serializedReturns->push_back(std::string("protobuf"));
+                            } else if (x86->operands[0].imm == m_utlbufferGetUtlbuffer) {
+                                serializedReturns->push_back(std::string("utlbuffer"));
+                            } else {
+                                if (CheckIfGetStringFunc(csHandle, x86->operands[0].imm)) {
+                                    goto result_start_of_if;
+                                }
+                                printf("unknown_ret: 0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+                                serializedReturns->push_back(std::string("unknown"));
+                            }
+                        }
+
                         break;
                     }
                 }
@@ -188,10 +469,200 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
     *t_argc = args.size();
 
     if (*functionid == 0 || *fencepost == 0) {
-        std::cout << "WARNING: No IPC info for function " + t_iname + "::" + *t_name << std::endl;
+        std::cout << "WARNING: No IPC info for function " << t_iname << "::" << *t_name << std::endl;
     }
 
+    std::cout << "Stop dumping function " << t_iname << "::" << *t_name << std::endl;
+
     return true;
+}
+
+// Sketchy stuff to find CUtlBuffer::PutString func
+bool ClientInterfaceDumper::CheckIfPutStringFunc(csh csHandle, size_t funcOffset) {
+    if (m_utlbufferPutString != -1) {
+        return false;
+    }
+
+    size_t funcSize = m_module->GetFunctionSize(funcOffset);
+    if(funcSize == -1)
+    {
+        return false;
+    }
+
+    std::cout << "PutString candidate" << std::endl;
+    RandomAccessStack ras;
+    cs_insn *ins;
+    size_t count;
+    count = cs_disasm(csHandle, (uint8_t *)(m_image + funcOffset), funcSize, funcOffset, 0, &ins);
+    if(count > 0)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+            cs_x86* x86 = &ins[i].detail->x86;
+
+            ras.Update(&ins[i]);
+
+            switch(ins[i].id)
+            {
+                case X86_INS_CALL:
+                {
+                    if(x86->operands[0].imm == 0x131900)
+                    {
+                        std::cout << "strlen" << std::endl;
+                        m_utlbufferPutString = funcOffset;
+                        break;
+                    }
+                }
+            }
+        }
+        cs_free(ins, count);
+    }
+
+    std::cout << "PutString candidate end" << std::endl;
+    
+    return m_utlbufferPutString != -1;
+}
+
+// Sketchy stuff to find CUtlBuffer::GetString func
+bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset) {
+    if (m_utlbufferGetString != -1) {
+        return false;
+    }
+    
+    size_t funcSize = m_module->GetFunctionSize(funcOffset);
+    if(funcSize == -1)
+    {
+        return false;
+    }
+
+    std::cout << "GetString candidate" << std::endl;
+    RandomAccessStack ras;
+    cs_insn *ins;
+    size_t count;
+    count = cs_disasm(csHandle, (uint8_t *)(m_image + funcOffset), funcSize, funcOffset, 0, &ins);
+    if(count > 0)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+            cs_x86* x86 = &ins[i].detail->x86;
+
+            ras.Update(&ins[i]);
+
+            switch(ins[i].id)
+            {
+                case X86_INS_CALL:
+                {
+                    if(x86->operands[0].imm == 0x131900)
+                    {
+                        std::cout << "strlen call" << std::endl;
+                        m_utlbufferGetString = funcOffset;
+                        break;
+                    }
+                }
+            }
+        }
+        cs_free(ins, count);
+    }
+
+    std::cout << "GetString candidate end" << std::endl;
+    
+    return m_utlbufferGetString != -1;
+}
+
+// Sketchy stuff to check if any function call is AssertCannotCallInCrossProcess
+bool ClientInterfaceDumper::CheckIfAssertCannotCallInCrossProcessFunc(csh csHandle, size_t funcOffset) {
+    if (m_assertCannotCallInCrossProcess != -1) {
+        std::cout << "m_assertCannotCallInCrossProcess " << m_assertCannotCallInCrossProcess << " == funcOffset " << funcOffset << std::endl;
+        if (m_assertCannotCallInCrossProcess == funcOffset)
+        {
+            std::cout << "true" << std::endl;
+            return true;
+        }
+        else
+        {
+            std::cout << "false" << std::endl;
+            return false;
+        }
+    }
+
+    if (funcOffset == m_sendSerializedFnOffset || funcOffset == m_steamFree || funcOffset == m_clientApiInitGlobal || funcOffset == m_logIPCCallFailure || funcOffset == m_utlbufferGetBytes || funcOffset == m_utlbufferGetString || funcOffset == m_utlbufferGetUnsignedInt64Offset || funcOffset == m_utlbufferPutByte || funcOffset == m_utlbufferPutBytes || funcOffset == m_utlbufferPutString || funcOffset == m_utlbufferPutUnsignedInt64Offset) {
+        return false;
+    }
+
+    size_t funcSize = m_module->GetFunctionSize(funcOffset);
+    if(funcSize == -1)
+    {
+        return false;
+    }
+
+    std::cout << "AssertCannotCallInCrossProcess candidate" << std::endl;
+    RandomAccessStack ras;
+    cs_insn *ins;
+    size_t count;
+    bool haveInt3 = false;
+    count = cs_disasm(csHandle, (uint8_t *)(m_image + funcOffset), funcSize, funcOffset, 0, &ins);
+    if(count > 0)
+    {
+start_of_loop:
+        for (size_t i = 0; i < count; i++)
+        {
+            printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+            cs_x86* x86 = &ins[i].detail->x86;
+
+            ras.Update(&ins[i]);
+
+            switch (ins[i].id)
+            {
+                case X86_INS_INT3:
+                {
+                    if (!haveInt3) {
+                        haveInt3 = true;
+                        goto start_of_loop;
+                    }
+                    break;
+                }
+
+                case X86_INS_CALL:
+                {
+                    if (haveInt3) {
+                        std::cout << "function call" << std::endl;
+                        if (ras.Size() > 8)
+                        {
+                            ras.Print();
+                            int32_t stackOffset = ras.GetOffset();
+                            std::cout << "wanted offset " << stackOffset - 8 << std::endl;
+                            size_t assertOffset = m_constBase + ras[stackOffset - 8]->disp;
+                            if(m_module->IsDataOffset(assertOffset))
+                            {
+                                std::cout << "string at offset " << std::string((const char *)(m_image + assertOffset)) << std::endl;
+                                if (std::string((const char *)(m_image + assertOffset)) == "Cannot call %s::%s in cross-process pipe!")
+                                {
+                                    m_assertCannotCallInCrossProcess = funcOffset;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                default:
+                    break;
+            }
+
+            if (m_assertCannotCallInCrossProcess != -1) {
+                break;
+            }
+        }
+        cs_free(ins, count);
+    }
+
+    std::cout << "AssertCannotCallInCrossProcess candidate end" << std::endl;
+    if (m_assertCannotCallInCrossProcess != -1) {
+        std::cout << "AssertCannotCallInCrossProcess found" << std::endl;
+    }
+    return m_assertCannotCallInCrossProcess != -1;
 }
 
 size_t ClientInterfaceDumper::GetIClientEngine()
@@ -328,8 +799,12 @@ void ClientInterfaceDumper::ParseVTable(std::string t_typeName, size_t t_vtoffse
         uint8_t interfaceId = 0;
         uint32_t functionid = 0;
         uint32_t fencepost = 0;
+        std::vector<std::string> serializedArgs;
+        std::vector<std::string> serializedReturns;
+        std::string serializedReturn;
+        bool cannotCallInCrossProcess = false;
 
-        if(!GetSerializedFuncInfo(t_typeName, vtFuncs[vmIdx], &fArgc, &fName, &interfaceId, &functionid, &fencepost) || fName.empty())
+        if (!GetSerializedFuncInfo(t_typeName, vtFuncs[vmIdx], &fArgc, &fName, &interfaceId, &functionid, &fencepost, &serializedArgs, &serializedReturns, &serializedReturn, &cannotCallInCrossProcess) || fName.empty())
         {
             fName = "Unknown_" + std::to_string(vmIdx);
         }
@@ -340,6 +815,10 @@ void ClientInterfaceDumper::ParseVTable(std::string t_typeName, size_t t_vtoffse
         func.m_interfaceid = interfaceId;
         func.m_functionid = functionid;
         func.m_fencepost = fencepost;
+        func.m_serializedargs = serializedArgs;
+        func.m_serializedreturns = serializedReturns;
+        func.m_serializedreturn = serializedReturn;
+        func.m_cannotcallincrossprocess = cannotCallInCrossProcess;
         m_interfaces[t_typeName].m_functions.push_back(func);
 
         ++vmIdx;
