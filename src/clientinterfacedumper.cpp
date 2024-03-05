@@ -5,6 +5,8 @@
 #include <set>
 #include <cctype>
 
+#define STRLEN_OFFSET 0x12e900
+
 ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     DumperBase(t_module),
     m_relRoShdr(nullptr),
@@ -229,7 +231,7 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
         {
             for (size_t i = 0; i < count; i++)
             {
-                printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+                //printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
                 cs_x86* x86 = &ins[i].detail->x86;
 
                 ras.Update(&ins[i]);
@@ -284,10 +286,16 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
                     case X86_INS_TEST:
                     {
+                        // This truly is terrible
                         if (isInResultDeserialization) {
-                            isInResultDeserialization = false;
-                            haveDeserializedArgs = true;
+                            if (i > 1 && ins[i-1].id == X86_INS_ADD) {
+                                if (ins[i-1].detail->x86.operands[1].imm == 0x10) {
+                                    isInResultDeserialization = false;
+                                    haveDeserializedArgs = true;
+                                }
+                            }
                         }
+
                         break;
                     }
 
@@ -299,7 +307,6 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
                         if (hasSetFunctionId && hasSetFencepost && !haveDeserializedArgs) {
                             if (x86->operands[0].imm == m_steamFree) {
-                                std::cout << "SteamFree" << std::endl;
                                 isInResultDeserialization = true;
                                 break;
                             }
@@ -307,7 +314,6 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
                         if (isInResultDeserialization) {
                             if (x86->operands[0].imm == m_logIPCCallFailure) {
-                                std::cout << "LogIPCCallFailure" << std::endl;
                                 isInResultDeserialization = false;
                                 haveDeserializedArgs = true;
                                 break;
@@ -316,7 +322,6 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
                         if(x86->operands[0].imm == m_sendSerializedFnOffset)
                         {
-                            std::cout << "SendSerialized" << std::endl;
                             if (ras.Size() > 4)
                             {
                                 int32_t stackOffset = ras.GetOffset();
@@ -329,7 +334,6 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                         }
                         
                         if (x86->operands[0].imm == m_utlbufferPutByte) {
-                            std::cout << "PutByte" << std::endl;
                             if (!hasSetInterfaceId)
                             {
                                 // Skip the first write, as it is the IPC command code
@@ -365,7 +369,6 @@ args_start_of_if:
                             } else if (x86->operands[0].imm == m_utlbufferPutByte) {
                                 serializedArgs->push_back(std::string("byte"));
                             } else if (x86->operands[0].imm == m_utlbufferPutBytes) {
-                                std::cout << "PutBytes" << std::endl;
                                 if (hasSkippedFunctionIDFunc) {
                                     int32_t stackOffset = ras.GetOffset();
                                     std::string as_str = "unknown";
@@ -406,7 +409,6 @@ args_start_of_if:
                         if (isInResultDeserialization) {
 result_start_of_if:
                             if (x86->operands[0].imm == m_utlbufferGetBytes) {
-                                std::cout << "GetBytes" << std::endl;
                                 int32_t stackOffset = ras.GetOffset();
                                 auto byteCount = ras[stackOffset - 8]->operands[0].imm;
                                 auto as_str = std::string("bytes") + std::to_string(byteCount);
@@ -440,7 +442,6 @@ result_start_of_if:
 
                                 serializedReturns->push_back(as_str);
                             } else if (x86->operands[0].imm == m_utlbufferGetUnsignedInt64Offset) {
-                                std::cout << "GetUnsignedInt64" << std::endl;
                                 serializedReturns->push_back(std::string("uint64"));
                             } else if (x86->operands[0].imm == m_utlbufferGetString) {
                                 serializedReturns->push_back(std::string("string"));  
@@ -498,7 +499,7 @@ bool ClientInterfaceDumper::CheckIfPutStringFunc(csh csHandle, size_t funcOffset
     {
         for (size_t i = 0; i < count; i++)
         {
-            printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+            //printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
             cs_x86* x86 = &ins[i].detail->x86;
 
             ras.Update(&ins[i]);
@@ -507,7 +508,7 @@ bool ClientInterfaceDumper::CheckIfPutStringFunc(csh csHandle, size_t funcOffset
             {
                 case X86_INS_CALL:
                 {
-                    if(x86->operands[0].imm == 0x131900)
+                    if(x86->operands[0].imm == STRLEN_OFFSET)
                     {
                         std::cout << "strlen" << std::endl;
                         m_utlbufferPutString = funcOffset;
@@ -536,7 +537,6 @@ bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset
         return false;
     }
 
-    std::cout << "GetString candidate" << std::endl;
     RandomAccessStack ras;
     cs_insn *ins;
     size_t count;
@@ -545,7 +545,6 @@ bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset
     {
         for (size_t i = 0; i < count; i++)
         {
-            printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
             cs_x86* x86 = &ins[i].detail->x86;
 
             ras.Update(&ins[i]);
@@ -554,7 +553,7 @@ bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset
             {
                 case X86_INS_CALL:
                 {
-                    if(x86->operands[0].imm == 0x131900)
+                    if(x86->operands[0].imm == STRLEN_OFFSET)
                     {
                         std::cout << "strlen call" << std::endl;
                         m_utlbufferGetString = funcOffset;
@@ -565,8 +564,6 @@ bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset
         }
         cs_free(ins, count);
     }
-
-    std::cout << "GetString candidate end" << std::endl;
     
     return m_utlbufferGetString != -1;
 }
@@ -574,15 +571,12 @@ bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset
 // Sketchy stuff to check if any function call is AssertCannotCallInCrossProcess
 bool ClientInterfaceDumper::CheckIfAssertCannotCallInCrossProcessFunc(csh csHandle, size_t funcOffset) {
     if (m_assertCannotCallInCrossProcess != -1) {
-        std::cout << "m_assertCannotCallInCrossProcess " << m_assertCannotCallInCrossProcess << " == funcOffset " << funcOffset << std::endl;
         if (m_assertCannotCallInCrossProcess == funcOffset)
         {
-            std::cout << "true" << std::endl;
             return true;
         }
         else
         {
-            std::cout << "false" << std::endl;
             return false;
         }
     }
@@ -608,7 +602,7 @@ bool ClientInterfaceDumper::CheckIfAssertCannotCallInCrossProcessFunc(csh csHand
 start_of_loop:
         for (size_t i = 0; i < count; i++)
         {
-            printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
+            //printf("0x%" PRIx64":\t%s\t\t%s\n", ins[i].address, ins[i].mnemonic, ins[i].op_str);
             cs_x86* x86 = &ins[i].detail->x86;
 
             ras.Update(&ins[i]);
@@ -630,13 +624,10 @@ start_of_loop:
                         std::cout << "function call" << std::endl;
                         if (ras.Size() > 8)
                         {
-                            ras.Print();
                             int32_t stackOffset = ras.GetOffset();
-                            std::cout << "wanted offset " << stackOffset - 8 << std::endl;
                             size_t assertOffset = m_constBase + ras[stackOffset - 8]->disp;
                             if(m_module->IsDataOffset(assertOffset))
                             {
-                                std::cout << "string at offset " << std::string((const char *)(m_image + assertOffset)) << std::endl;
                                 if (std::string((const char *)(m_image + assertOffset)) == "Cannot call %s::%s in cross-process pipe!")
                                 {
                                     m_assertCannotCallInCrossProcess = funcOffset;
