@@ -297,6 +297,10 @@ bool ClientModule::Parse()
     return true;
 }
 
+ModuleImage *ClientModule::GetImage() {
+    return &this->m_image;
+}
+
 size_t ClientModule::FindSignature(const char* t_sign, const char* t_mask, size_t t_searchBaseOffset)
 {
     size_t signLen = std::strlen(t_mask);

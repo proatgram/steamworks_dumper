@@ -5,6 +5,7 @@
 #include <string_view>
 #include <elf.h>
 #include <fstream>
+#include <map>
 
 class ModuleImage
 {
@@ -17,6 +18,7 @@ public:
     const Elf32_Shdr *GetSectionHeader(std::string_view t_section);
     const char* GetImage();
     size_t GetImageSize();
+    size_t GetImportRelocByName(std::string_view name);
 
 private:
     ModuleImage();
@@ -47,6 +49,7 @@ private:
 
     char* m_image;
     size_t m_imageSize;
+    std::map<std::string, size_t> locatedSymbols;
 };
 
 #endif // MODULEIMAGE_H

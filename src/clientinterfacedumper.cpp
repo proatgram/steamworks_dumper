@@ -5,8 +5,6 @@
 #include <set>
 #include <cctype>
 
-#define STRLEN_OFFSET 0x12e900
-
 ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     DumperBase(t_module),
     m_relRoShdr(nullptr),
@@ -19,6 +17,7 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     m_utlbufferPutBytes(-1),
     m_logIPCCallFailure(-1),
     m_steamFree(-1),
+    m_ipcClientFreeFuncCallReturnBuffer(-1),
     m_utlbufferGetUnsignedInt64Offset(-1),
     m_utlbufferPutString(-1),
     m_utlbufferGetString(-1),
@@ -27,12 +26,20 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     m_utlbufferGetUtlbuffer(-1),
     m_utlbufferPutUtlbuffer(-1),
     m_utlbufferPutProtobuf(-1),
-    m_utlbufferPutUtlvector(-1)
+    m_utlbufferPutUtlvector(-1),
+    m_strlen(-1)
 {
     m_relRoShdr = t_module->GetSectionHeader(".data.rel.ro");
     m_relRoLocalShdr = t_module->GetSectionHeader(".data.rel.ro.local");
     m_roShdr = t_module->GetSectionHeader(".rodata");
     m_txtShdr = t_module->GetSectionHeader(".text");
+
+    m_strlen = t_module->GetImage()->GetImportRelocByName("strlen");
+
+    m_ipcClientFreeFuncCallReturnBuffer = t_module->FindSignature(
+        "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x85\xFF\x74\x00\x83\xEC\x00\x8B", 
+        "xxxxx????xx????xx?x???xxx?xx?x"
+    );
 
     m_sendSerializedFnOffset = t_module->FindSignature(
         "\x55\x89\xE5\x57\x56\xE8\x00\x00\x00\x00\x81\xC6\x00\x00\x00\x00\x53\x81\xEC\x00\x00\x00\x00\x8B\x45\x08\x89\x85\x00\x00\x00\x00\x8B\x45\x10\x8B\xBE\x00\x00\x00\x00\x89\x85\x00\x00\x00\x00",
@@ -146,6 +153,11 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
         std::cout << "Could not find SteamFree offset!" << std::endl;
     }
 
+    if (m_ipcClientFreeFuncCallReturnBuffer == -1) 
+    {
+        std::cout << "Could not find CIPCClient::FreeFuncCallReturnBuffer offset!" << std::endl;
+    }
+
     if (m_utlbufferGetUnsignedInt64Offset == -1) 
     {
         std::cout << "Could not find CUtlBuffer::GetUnsignedInt64 offset!" << std::endl;
@@ -189,6 +201,13 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     if(m_clientApiInitGlobal == -1)
     {
         std::cout << "Could not find ClientAPI_Init offset..." << std::endl;
+    }
+
+    if (m_strlen == -1) 
+    {
+        std::cout << "Could not find strlen import!" << std::endl;
+    } else {
+        std::cout << "Strlen import at " << (void*)m_strlen << std::endl;
     }
 }
 
@@ -314,6 +333,12 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
 
                         if (isInResultDeserialization) {
                             if (x86->operands[0].imm == m_logIPCCallFailure) {
+                                isInResultDeserialization = false;
+                                haveDeserializedArgs = true;
+                                break;
+                            }
+
+                            if (x86->operands[0].imm == m_ipcClientFreeFuncCallReturnBuffer) {
                                 isInResultDeserialization = false;
                                 haveDeserializedArgs = true;
                                 break;
@@ -480,7 +505,7 @@ result_start_of_if:
 
 // Sketchy stuff to find CUtlBuffer::PutString func
 bool ClientInterfaceDumper::CheckIfPutStringFunc(csh csHandle, size_t funcOffset) {
-    if (m_utlbufferPutString != -1) {
+    if (m_utlbufferPutString != -1 || m_strlen == -1) {
         return false;
     }
 
@@ -508,7 +533,7 @@ bool ClientInterfaceDumper::CheckIfPutStringFunc(csh csHandle, size_t funcOffset
             {
                 case X86_INS_CALL:
                 {
-                    if(x86->operands[0].imm == STRLEN_OFFSET)
+                    if(x86->operands[0].imm == m_strlen)
                     {
                         std::cout << "strlen" << std::endl;
                         m_utlbufferPutString = funcOffset;
@@ -527,7 +552,7 @@ bool ClientInterfaceDumper::CheckIfPutStringFunc(csh csHandle, size_t funcOffset
 
 // Sketchy stuff to find CUtlBuffer::GetString func
 bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset) {
-    if (m_utlbufferGetString != -1) {
+    if (m_utlbufferGetString != -1 || m_strlen == -1) {
         return false;
     }
     
@@ -553,7 +578,7 @@ bool ClientInterfaceDumper::CheckIfGetStringFunc(csh csHandle, size_t funcOffset
             {
                 case X86_INS_CALL:
                 {
-                    if(x86->operands[0].imm == STRLEN_OFFSET)
+                    if(x86->operands[0].imm == m_strlen)
                     {
                         std::cout << "strlen call" << std::endl;
                         m_utlbufferGetString = funcOffset;

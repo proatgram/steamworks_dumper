@@ -32,6 +32,7 @@ public:
     size_t FindStringLiteral(std::string_view t_string);;
     bool FindRefOrigin(size_t t_offset, size_t* t_funcOffset, size_t* t_funcSize);
     bool IsDataOffset(size_t t_offset);
+    ModuleImage *GetImage();
 
 private:
     ClientModule();

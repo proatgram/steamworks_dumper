@@ -47,6 +47,7 @@ private:
     const Elf32_Shdr* m_roShdr;
 
     size_t m_steamFree;
+    size_t m_ipcClientFreeFuncCallReturnBuffer;
     size_t m_logIPCCallFailure;
 
     size_t m_utlbufferPutUtlvector;
@@ -66,6 +67,8 @@ private:
 
     size_t m_sendSerializedFnOffset;
     size_t m_clientApiInitGlobal;
+
+    size_t m_strlen;
 
     std::map<std::string, ClientInterface> m_interfaces;
 };

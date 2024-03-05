@@ -101,6 +101,45 @@ Elf32_Sym *ModuleImage::GetSymbolAtOffset(size_t t_offset)
     return nullptr;
 }
 
+size_t ModuleImage::GetImportRelocByName(std::string_view name)
+{
+    std::map<std::string,size_t>::iterator it = locatedSymbols.find(std::string(name));
+    if(it != locatedSymbols.end())
+    {
+        return it->second;
+    }
+
+    const Elf32_Shdr* dynSymShdr = GetSectionHeader(".dynsym");
+    const Elf32_Shdr* dynstrShdr = GetSectionHeader(".dynstr");
+
+    if(dynSymShdr == nullptr || name.empty())
+    {
+        return -1;
+    }
+
+    Elf32_Sym* symtab = (Elf32_Sym*)(m_image + dynSymShdr->sh_addr);
+    char* dynstr = (char*)(m_image + dynstrShdr->sh_addr);
+
+    int numSym = dynSymShdr->sh_size / sizeof(Elf32_Sym);
+    for(int i = 0; i < numSym; ++i)
+    {
+        if (symtab[i].st_name == 0) {
+            continue;
+        }
+
+        char *symName = (dynstr + symtab[i].st_name);
+
+        if (std::string(symName) == name)
+        {
+            size_t val = symtab[i].st_value;
+            locatedSymbols.insert(std::pair<std::string, size_t>(std::string(name), val));
+            return val;
+        }
+    }
+
+    return -1;
+}
+
 bool ModuleImage::ReadSectionHeaders()
 {
     if( m_hdr.e_shnum == 0 ||
