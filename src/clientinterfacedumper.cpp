@@ -833,7 +833,6 @@ void ClientInterfaceDumper::ParseVTable(std::string t_typeName, size_t t_vtoffse
         func.m_fencepost = fencepost;
         func.m_serializedargs = serializedArgs;
         func.m_serializedreturns = serializedReturns;
-        func.m_serializedreturn = serializedReturn;
         func.m_cannotcallincrossprocess = cannotCallInCrossProcess;
         m_interfaces[t_typeName].m_functions.push_back(func);
 

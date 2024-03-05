@@ -81,7 +81,6 @@ void DumpInterfaces(ClientModule* t_module, const std::string& t_outPath, bool t
                 out << "            \"functionid\": \"" << vtIt->m_functionid << "\"," << std::endl;
                 out << "            \"fencepost\": \"" << vtIt->m_fencepost << "\"," << std::endl;
                 out << "            \"cannotcallincrossprocess\": \"" << (int32_t)vtIt->m_cannotcallincrossprocess << "\"," << std::endl;
-                out << "            \"serializedreturn\": \"" << vtIt->m_serializedreturn << "\"," << std::endl;
                 if(t_includeOffsets)
                 {
                     out << "            \"addr\": \"0x" << std::hex << vtIt->m_addr << std::dec << "\"," << std::endl;

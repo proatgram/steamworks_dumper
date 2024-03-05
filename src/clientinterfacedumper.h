@@ -12,7 +12,6 @@ struct InterfaceFunction
     uint32_t m_fencepost;
     std::vector<std::string> m_serializedargs;
     std::vector<std::string> m_serializedreturns;
-    std::string m_serializedreturn;
     bool m_cannotcallincrossprocess;
 };
 
