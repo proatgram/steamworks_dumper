@@ -200,7 +200,7 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
 
     if(m_clientApiInitGlobal == -1)
     {
-        std::cout << "Could not find ClientAPI_Init offset..." << std::endl;
+        std::cout << "Could not find ClientAPI_Init offset (this is fine if not decompiling steamui.so)" << std::endl;
     }
 
     if (m_strlen == -1) 
@@ -313,6 +313,16 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                                     haveDeserializedArgs = true;
                                 }
                             }
+                        } else if (hasSetFunctionId && hasSetFencepost && !haveDeserializedArgs) {
+                            // Note: This is bad and can potentially segfault (as can every other line of code here, but this works fine for what it does, although I can't quite remember why things are done this way to begin with...)
+                            if (ins[i+1].id == X86_INS_JE) {
+                                if (ins[i+2].id == X86_INS_MOV) {
+                                    isInResultDeserialization = true;
+                                }
+
+                                isInResultDeserialization = true;
+                            }
+                            
                         }
 
                         break;
@@ -322,13 +332,6 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                     {
                         if (CheckIfAssertCannotCallInCrossProcessFunc(csHandle, x86->operands[0].imm)) {
                             *cannotCallInCrossProcess = true;
-                        }
-
-                        if (hasSetFunctionId && hasSetFencepost && !haveDeserializedArgs) {
-                            if (x86->operands[0].imm == m_steamFree) {
-                                isInResultDeserialization = true;
-                                break;
-                            }
                         }
 
                         if (isInResultDeserialization) {
@@ -650,7 +653,16 @@ start_of_loop:
                         if (ras.Size() > 8)
                         {
                             int32_t stackOffset = ras.GetOffset();
-                            size_t assertOffset = m_constBase + ras[stackOffset - 8]->disp;
+                            auto ptr = ras[stackOffset - 8];
+                            if (ptr == nullptr) {
+                                break;
+                            }
+                            
+                            if (ptr->disp == 0) {
+                                break;
+                            }
+
+                            size_t assertOffset = m_constBase + ptr->disp;
                             if(m_module->IsDataOffset(assertOffset))
                             {
                                 if (std::string((const char *)(m_image + assertOffset)) == "Cannot call %s::%s in cross-process pipe!")

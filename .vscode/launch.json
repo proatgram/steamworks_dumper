@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/steamworks_dumper",
-            "args": ["/home/onni/.steam/steam/ubuntu12_32/steamclient.so", "outputnew"],
+            "args": ["/home/onni/Documents/opensteamclient/OpenSteamClient/tools/oswupdater/work/1719259903/extracted/bins_ubuntu12/ubuntu12_32/steamclient.so", "outputnew"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
             "environment": [],
