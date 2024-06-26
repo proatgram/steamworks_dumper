@@ -15,7 +15,8 @@ public:
     bool Load();
     bool Parse();
 
-    const char* GetImageBytes();
+    void *m_dlopenHandle;
+    const char *GetImageBytes();
     const Elf32_Sym* GetSymbol(std::string_view t_name);
     const size_t FindSymbols(std::string_view t_name, std::vector<const Elf32_Sym*>* t_out);
     const Elf32_Shdr* GetSectionHeader(std::string_view t_name);

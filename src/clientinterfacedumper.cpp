@@ -27,7 +27,8 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     m_utlbufferPutUtlbuffer(-1),
     m_utlbufferPutProtobuf(-1),
     m_utlbufferPutUtlvector(-1),
-    m_strlen(-1)
+    m_strlen(-1),
+    m_gMemAllocSteam(-1)
 {
     m_relRoShdr = t_module->GetSectionHeader(".data.rel.ro");
     m_relRoLocalShdr = t_module->GetSectionHeader(".data.rel.ro.local");
@@ -35,6 +36,14 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     m_txtShdr = t_module->GetSectionHeader(".text");
 
     m_strlen = t_module->GetImage()->GetImportRelocByName("strlen");
+    std::vector<const Elf32_Sym*> tis;
+    if(t_module->FindSymbols("g_pMemAllocSteam", &tis) != 0)
+    {
+        for(auto it = tis.begin(); it != tis.end(); ++it)
+        {
+            m_gMemAllocSteam = (*it)->st_value;
+        }
+    }
 
     m_ipcClientFreeFuncCallReturnBuffer = t_module->FindSignature(
         "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x85\xFF\x74\x00\x83\xEC\x00\x8B", 
@@ -69,6 +78,7 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
         "xx????xx????xx?x????x????x"
     );
 
+    // This is also very volatile, but not even all that useful, since the function is so tiny it can be inlined (and that's what's started happening recently)
     m_steamFree = t_module->FindSignature(
         "\xE8\x00\x00\x00\x00\x81\xC2\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x85\xC9",
         "x????xx????xx?x???x??xx"
@@ -85,25 +95,16 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
         "xx????xx????xx?x??????x????x"
     );
 
-    m_utlbufferGetProtobuf = t_module->FindSignature(
-        "\x57\x56\x53\x8B\x74\x24\x10\x00\x00\x00\x00\x00\x81\xC3\xC4\xAD\xA0\x01\x83\xEC\x0C\x56\x00\x00\x00\x00\x00\x83\xC4\x0C\x50\x89\xC7", 
-        "xxxxxxx?????xxxxxxxxxx?????xxxxxx"
-    );
+    m_utlbufferGetProtobuf = t_module->FindSignature("\x57\x56\x53\x8B\x74\x24\x10\x00\x00\x00\x00\x00\x81\xC3\x84\xEB\xA8\x01\x83\xEC\x0C\x56\x00\x00\x00\x00\x00\x83\xC4\x0C\x50\x89", "xxxxxxx?????xxxxxxxxxx?????xxxxx");
 
     m_utlbufferPutProtobuf = t_module->FindSignature(
         "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x00\x8B\x00\x00\x00\x8B\x00\x00\x00\x8B\x00\x00\x8D\x00\x00\x00\x00\x00\x8B\x00\x00\x39\xD0\x75\x00\x8B", 
         "xxxxx????xx????xx?x???x???x??x?????x??xxx?x"
     );
 
-    m_utlbufferGetUtlbuffer = t_module->FindSignature(
-        "\x57\x56\x53\x8B\x74\x24\x10\x00\x00\x00\x00\x00\x81\xC3\xF4\xAC\xA0\x01\x83\xEC\x0C\x56\x00\x00\x00\x00\x00\x83\xC4\x0C\x50\x89", 
-        "xxxxxxx?????xxxxxxxxxx?????xxxxx"
-    );
+    m_utlbufferGetUtlbuffer = t_module->FindSignature("\x57\x56\x53\x8B\x74\x24\x10\x00\x00\x00\x00\x00\x81\xC3\xB4\xEA\xA8\x01\x83\xEC\x0C\x56\x00\x00\x00\x00\x00\x83\xC4\x0C\x50\x89\xC7\x8B\x46", "xxxxxxx?????xxxxxxxxxx?????xxxxxxxx");
 
-    m_utlbufferPutUtlbuffer = t_module->FindSignature(
-        "\x57\x56\x53\x8B\x74\x24\x14\x00\x00\x00\x00\x00\x81\xC3\xD4\x98\xA0\x01\x8B\x7C\x24\x10\x83\xEC\x08\xFF\x76\x14\x57\x00\x00\x00\x00\x00\x83\xC4", 
-        "xxxxxxx?????xxxxxxxxxxxxxxxxx?????xx"
-    );
+    m_utlbufferPutUtlbuffer = t_module->FindSignature("\x57\x56\x53\x8B\x74\x24\x14\x00\x00\x00\x00\x00\x81\xC3\xF4\xEA\xA8\x01\x8B\x7C\x24\x10\x83\xEC\x08\xFF\x76\x10\x57\x00\x00\x00\x00\x00\x83\xC4", "xxxxxxx?????xxxxxxxxxxxxxxxxx?????xx");
 
     m_utlbufferPutSteamNetworkingIdentity = t_module->FindSignature(
         "\x57\x56\x53\x8B\x00\x00\x00\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x8B\x00\x00\x00\x85\xFF\x74\x00\x83\xEC\x00\x68", 
@@ -126,6 +127,11 @@ ClientInterfaceDumper::ClientInterfaceDumper(ClientModule *t_module):
     if(m_sendSerializedFnOffset == -1)
     {
         std::cout << "Could not find SendSerializedFunction offset!" << std::endl;
+    }
+
+    if(m_gMemAllocSteam == -1)
+    {
+        std::cout << "Could not find g_pMemAllocSteam offset!" << std::endl;
     }
 
     if(m_utlbufferPutByte == -1)
@@ -236,6 +242,7 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
     bool hasSkippedFunctionIDFunc = false;
     bool isInArgsDeserialization = false;
     bool haveDeserializedArgs = false;
+    bool nextCallIsResultDeserialization = false;
 
     if(cs_open(CS_ARCH_X86, CS_MODE_32, &csHandle) == CS_ERR_OK)
     {
@@ -300,6 +307,20 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                             }
                         }
 
+                        if (ins[i].id == X86_INS_MOV && x86->operands[0].type == X86_OP_REG) {
+                            if (!hasSetFencepost && x86->operands[1].mem.base == X86_REG_INVALID && x86->operands[1].imm <= UINT32_MAX && x86->operands[1].imm > 255 && x86->operands[1].imm != *functionid) {
+                                if (hasSetFunctionId) {
+                                    *fencepost = x86->operands[1].imm;
+                                    hasSetFencepost = true;
+                                }
+                                else
+                                {
+                                    *functionid = x86->operands[1].imm;
+                                    hasSetFunctionId = true;
+                                }
+                            }
+                        }
+
                         break;
                     }
 
@@ -317,10 +338,9 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                             // Note: This is bad and can potentially segfault (as can every other line of code here, but this works fine for what it does, although I can't quite remember why things are done this way to begin with...)
                             if (ins[i+1].id == X86_INS_JE) {
                                 if (ins[i+2].id == X86_INS_MOV) {
-                                    isInResultDeserialization = true;
+                                    std::cout << "entered result deserialization" << std::endl;
+                                    nextCallIsResultDeserialization = true;
                                 }
-
-                                isInResultDeserialization = true;
                             }
                             
                         }
@@ -332,6 +352,12 @@ bool ClientInterfaceDumper::GetSerializedFuncInfo(std::string t_iname, size_t t_
                     {
                         if (CheckIfAssertCannotCallInCrossProcessFunc(csHandle, x86->operands[0].imm)) {
                             *cannotCallInCrossProcess = true;
+                        }
+
+                        if (nextCallIsResultDeserialization) {
+                            nextCallIsResultDeserialization = false;
+                            isInResultDeserialization = true;
+                            break;
                         }
 
                         if (isInResultDeserialization) {
@@ -414,18 +440,31 @@ args_start_of_if:
                                     hasSkippedFunctionIDFunc = true;
                                 }
                             } else if (x86->operands[0].imm == m_utlbufferPutString) {
-                                serializedArgs->push_back(std::string("string"));  
-                            } else if (x86->operands[0].imm == m_utlbufferPutUnsignedInt64Offset) {
+                                serializedArgs->push_back(std::string("string"));
+                                m_utlbufferPutString = -1;
+                            }
+                            else if (x86->operands[0].imm == m_utlbufferPutUnsignedInt64Offset)
+                            {
                                 serializedArgs->push_back(std::string("uint64"));
-                            } else if (x86->operands[0].imm == m_utlbufferPutUtlbuffer) {
+                            }
+                            else if (x86->operands[0].imm == m_utlbufferPutUtlbuffer)
+                            {
                                 serializedArgs->push_back(std::string("utlbuffer"));
-                            } else if (x86->operands[0].imm == m_utlbufferPutProtobuf) {
+                            }
+                            else if (x86->operands[0].imm == m_utlbufferPutProtobuf)
+                            {
                                 serializedArgs->push_back(std::string("protobuf"));
-                            } else if (x86->operands[0].imm == m_utlbufferPutSteamNetworkingIdentity) {
+                            }
+                            else if (x86->operands[0].imm == m_utlbufferPutSteamNetworkingIdentity)
+                            {
                                 serializedArgs->push_back(std::string("steamnetworkingidentity"));
-                            } else if (x86->operands[0].imm == m_utlbufferPutUtlvector) {
+                            }
+                            else if (x86->operands[0].imm == m_utlbufferPutUtlvector)
+                            {
                                 serializedArgs->push_back(std::string("utlvector"));
-                            } else {
+                            }
+                            else
+                            {
                                 if (CheckIfPutStringFunc(csHandle, x86->operands[0].imm)) {
                                     goto args_start_of_if;
                                 }

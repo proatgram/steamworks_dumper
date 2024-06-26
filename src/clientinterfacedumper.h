@@ -68,6 +68,7 @@ private:
     size_t m_clientApiInitGlobal;
 
     size_t m_strlen;
+    size_t m_gMemAllocSteam;
 
     std::map<std::string, ClientInterface> m_interfaces;
 };

@@ -1,5 +1,6 @@
 #include <cstring>
 #include "clientmodule.h"
+#include <dlfcn.h>
 
 ClientModule::ClientModule(std::string_view t_path):
     m_image(t_path),
@@ -8,6 +9,8 @@ ClientModule::ClientModule(std::string_view t_path):
     m_extStrTab(nullptr),
     m_numExtSyms(0)
 {
+    auto str = std::string(t_path);
+    m_dlopenHandle = dlopen(str.c_str(), RTLD_LAZY | RTLD_LOCAL);
 }
 
 ClientModule::~ClientModule()

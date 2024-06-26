@@ -8,7 +8,7 @@ EnumDumper::EnumDumper(ClientModule *t_module):
     m_searchHint(-1),
     m_relData(nullptr)
 {
-    m_searchHint = m_module->FindStringLiteral("Missing String for %s (%d)");
+    m_searchHint = m_module->FindStringLiteral("Missing String for %s (%d). If this comes from user data or could be valid, provide a default to avoid asserting.");
     if(m_searchHint == -1)
     {
         std::cout << "Enum search hint not found" << std::endl;

@@ -14,22 +14,17 @@ CallbackDumper::CallbackDumper(ClientModule* t_module):
     m_postCallbackToServer(-1),
     m_logCallback(-1)
 {
-    // ( bool? )( this*, int32_t cbID, char* cbuf, int32_t szBuf )
-    m_postCallbackInternal = m_module->FindSignature(
-                "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x24\x8B\x44\x24\x44\x8B\x74\x24\x38\x8B\x7C\x24\x3C\x8B\x6C\x24\x40",
-                "xxxxx????xx????xxxxxxxxxxxxxxxxxxx"
-    );
+    // The PostCallbackToAll and PostCallbackToUI signatures are very unstable. 
+
+    // ( bool? )( this*, int32_t cbID, char* cbuf, int32_t szBuf ) (find with PostPersonaStateCallback)
+    m_postCallbackInternal = m_module->FindSignature("\x55\x57\x56\x53\x00\x00\x00\x00\x00\x81\xC3\xB7\x1D\x33\x02\x83\xEC\x20\x8B\x44\x24\x40\x8B\x74\x24\x34\x8B\x7C\x24\x38\x8B\x6C\x24\x3C\xFF\x74\x24\x44\x6A", "xxxx?????xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
     if(m_postCallbackInternal == -1)
     {
         std::cout << "Could not find PostCallbackToAll offset" << std::endl;
     }
 
-    // ( bool? )( this*, int32_t cbID, char* cbuf, int32_t szBuf )
-    m_postCallbackToUI = m_module->FindSignature(
-                "\x55\x57\x56\x53\xE8\x00\x00\x00\x00\x81\xC3\x00\x00\x00\x00\x83\xEC\x24\x8B\x44\x24\x44\x8B\x74\x24\x38\x8B\x7C\x24\x3C\x8B\x6C\x24\x40",
-                "xxxxx????xx????xxxxxxxxxxxxxxxxxxx",
-                m_postCallbackInternal + 1
-    );
+    // ( bool? )( this*, int32_t cbID, char* cbuf, int32_t szBuf ) (find with AppLifetimeNotice_t, chat callbacks, etc)
+    m_postCallbackToUI = m_module->FindSignature("\x55\x57\x56\x53\x00\x00\x00\x00\x00\x81\xC3\x17\x1C\x33\x02\x83\xEC\x20\x8B\x44\x24\x40\x8B\x74\x24\x34\x8B\x7C\x24\x38\x8B\x6C\x24\x3C\xFF\x74\x24\x44\x6A", "xxxx?????xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", m_postCallbackToAll + 1);
     if(m_postCallbackToUI == -1)
     {
         std::cout << "Could not find PostCallbackToUI offset" << std::endl;
