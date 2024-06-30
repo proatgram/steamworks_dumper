@@ -1,11 +1,11 @@
+#include "steamworks_dumper.h"
+
 #include <iostream>
 #include <fstream>
-#include "clientmodule.h"
 #include "enumdumper.h"
 #include "clientinterfacedumper.h"
 #include "callbackdumper.h"
 #include "emsgdumper.h"
-#include <argparse/argparse.hpp>
 
 void DumpEnums(ClientModule* t_module, const std::string& t_outPath)
 {
@@ -214,37 +214,8 @@ void DumpLegacyEMsgList(ClientModule* t_module, const std::string& t_outPath)
     }
 }
 
-int main(int argc, char* argv[])
+int Dump(const std::string &modulePath, const std::string &outputPath, bool includeOffsets)
 {
-    argparse::ArgumentParser program("steamworks_dumper");
-    program.add_argument("--dump-offsets")
-            .default_value(false)
-            .implicit_value(true)
-            .help("include relative offsets/addresses in dumps");
-
-    program.add_argument("in")
-            .help(".so in")
-            .required();
-
-    program.add_argument("out")
-            .help("output path")
-            .required();
-
-    try
-    {
-        program.parse_args(argc, argv);
-    }
-    catch (const std::runtime_error& err)
-    {
-        std::cerr << err.what() << std::endl;
-        std::cerr << program;
-        std::exit(1);
-    }
-
-    std::string modulePath = program.get("in");
-    std::string outPath = program.get("out");
-    bool includeOffsets = program.get<bool>("--dump-offsets");
-
     std::cout << "Loading module image... ";
     ClientModule module(modulePath);
     if(!module.Load())
@@ -262,10 +233,10 @@ int main(int argc, char* argv[])
     }
     std::cout << "Done" << std::endl;
 
-    DumpCallbacks(&module, outPath, includeOffsets);
-    DumpInterfaces(&module, outPath, includeOffsets);
-    DumpEnums(&module, outPath);
-    DumpLegacyEMsgList(&module, outPath);
+    DumpCallbacks(&module, outputPath, includeOffsets);
+    DumpInterfaces(&module, outputPath, includeOffsets);
+    DumpEnums(&module, outputPath);
+    DumpLegacyEMsgList(&module, outputPath);
 
     return 0;
 }
