@@ -281,65 +281,65 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
 
     // Use emplace
     if (options.has_deprecated()) {
-        optionsKv.insert("dpericated", (options.deprecated() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("dpericated", (options.deprecated() ? "true" : "false")));
     }
 
     if (options.has_optimize_for()) {
         switch (options.optimize_for()) {
             case google::protobuf::FileOptions_OptimizeMode::FileOptions_OptimizeMode_SPEED: {
-                optionsKv.insert("optimize_for", "SPEED");
+                optionsKv.insert(std::make_pair("optimize_for", "SPEED"));
                 break;
             }
             case google::protobuf::FileOptions_OptimizeMode::FileOptions_OptimizeMode_CODE_SIZE: {
-                optionsKv.insert("optimize_for", "CODE_SIZE");
+                optionsKv.insert(std::make_pair("optimize_for", "CODE_SIZE"));
                 break;
             }
             case google::protobuf::FileOptions_OptimizeMode::FileOptions_OptimizeMode_LITE_RUNTIME: {
-                optionsKv.insert("optimize_for", "LITE_RUNTIME");
+                optionsKv.insert(std::make_pair("optimize_for", "LITE_RUNTIME"));
                 break;
             }
         }
     }
     
     if (options.has_cc_generic_services()) {
-        optionsKv.insert("cc_generic_services", (options.cc_generic_services() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("cc_generic_services", (options.cc_generic_services() ? "true" : "false")));
     }
 
     if (options.has_go_package()) {
         std::stringstream ss;
         ss << "\"" << options.go_package() << "\"";
         ss.flush();
-        optionsKv.insert("go_package", ss.str().c_str());
+        optionsKv.insert(std::make_pair("go_package", ss.str().c_str()));
     }
     
     if (options.has_java_package()) {
         std::stringstream ss;
         ss << "\"" << options.java_package() << "\"";
         ss.flush();
-        optionsKv.insert("java_package", ss.str().c_str());
+        optionsKv.insert(std::make_pair("java_package", ss.str().c_str()));
     }
 
     if (options.has_java_outer_classname()) {
         std::stringstream ss;
         ss << "\"" << options.java_outer_classname() << "\"";
         ss.flush();
-        optionsKv.insert("java_outer_classname", ss.str().c_str());
+        optionsKv.insert(std::make_pair("java_outer_classname", ss.str().c_str()));
     }
 
     if (options.has_java_generic_services()) {
-        optionsKv.insert("java_generic_services", (options.java_generic_services() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("java_generic_services", (options.java_generic_services() ? "true" : "false")));
     }
 
     if (options.has_java_multiple_files()) {
-        optionsKv.insert("java_multiple_files", (options.java_multiple_files() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("java_multiple_files", (options.java_multiple_files() ? "true" : "false")));
     }
 
     if (options.has_java_string_check_utf8()) {
-        optionsKv.insert("java_string_check_utf8", (options.java_string_check_utf8() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("java_string_check_utf8", (options.java_string_check_utf8() ? "true" : "false")));
     }
 
     if (options.has_py_generic_services()) {
-        optionsKv.insert("py_generic_services", (options.py_generic_services() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("py_generic_services", (options.py_generic_services() ? "true" : "false")));
     }
 
     DumpOptionsMatching(source, ".google.protobuf.FileOptions", options, optionsKv);
@@ -351,15 +351,15 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     std::map<std::string, std::string> optionsKv{};
 
     if (options.has_message_set_wire_format()) {
-        optionsKv.insert("message_set_wire_format", (options.message_set_wire_format() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("message_set_wire_format", (options.message_set_wire_format() ? "true" : "false")));
     }
 
     if (options.has_no_standard_descriptor_accessor()) {
-        optionsKv.insert("no_standard_descriptor_accessor", (options.no_standard_descriptor_accessor() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("no_standard_descriptor_accessor", (options.no_standard_descriptor_accessor() ? "true" : "false")));
     }
 
     if (options.has_deprecated()) {
-        optionsKv.insert("depricated", (options.deprecated() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
     }
 
     DumpOptionsMatching(source, ".google.protobuf.MessageOptions", options, optionsKv);
@@ -371,11 +371,11 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     std::map<std::string, std::string> optionsKv{};
 
     if (options.has_allow_alias()) {
-        optionsKv.insert("allow_alias", (options.allow_alias() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("allow_alias", (options.allow_alias() ? "true" : "false")));
     }
 
     if (options.has_deprecated()) {
-        optionsKv.insert("depricated", (options.deprecated() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
     }
 
     DumpOptionsMatching(source, ".google.protobuf.EnumOptions", options, optionsKv);
@@ -387,7 +387,7 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     std::map<std::string, std::string> optionsKv{};
 
     if (options.has_deprecated()) {
-        optionsKv.insert("depricated", (options.deprecated() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
     }
 
     DumpOptionsMatching(source, ".google.protobuf.EnumValueOptions", options, optionsKv);
@@ -399,7 +399,7 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     std::map<std::string, std::string> optionsKv{};
 
     if (options.has_deprecated()) {
-        optionsKv.insert("depricated", (options.deprecated() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
     }
 
     DumpOptionsMatching(source, ".google.protobuf.ServiceOptions", options, optionsKv);
@@ -411,7 +411,7 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     std::map<std::string, std::string> optionsKv{};
 
     if (options.has_deprecated()) {
-        optionsKv.insert("depricated", (options.deprecated() ? "true" : "false"));
+        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
     }
 
     DumpOptionsMatching(source, ".google.protobuf.MethodOptions", options, optionsKv);
