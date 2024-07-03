@@ -615,6 +615,41 @@ void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto 
     PopDescriptorName();
 }
 
+void ProtobufDumper::DumpEnumDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumDescriptorProto &field, std::stringstream &ss, int level, bool &marker) {
+    std::string levelSpace('\t', level);
+
+    AppendHeadingSpace(ss, marker);
+    ss << levelSpace << "enum " << field.name() << " {" << std::endl;
+
+    for (const auto &[key, value] : DumpOptions(source, field.options())) {
+        ss << levelSpace << '\t' << "option " << key << " = " << value << ";" << std::endl;
+    }
+
+    for (const auto &enumValue : field.value()) {
+        std::map<std::string, std::string> options = DumpOptions(source, enumValue.options());
+
+        std::stringstream parameters{};
+        if (options.size() > 0) {
+            parameters << '[';
+            bool first = true;
+            for (const auto &[key, value] : options) {
+                if (!first) {
+                    parameters << ", ";
+                }
+
+                parameters << key << " = " << value;
+            }
+            parameters << ']';
+            parameters.flush();
+        }
+
+        ss << levelSpace << '\t' << enumValue.name() << " = " << enumValue.number() << parameters.str() << std::endl;
+    }
+
+    ss << levelSpace << "}" << std::endl;
+    marker = true;
+}
+
 std::string ProtobufDumper::GetPackagePath(std::string package, std::string name) {
     if (package.empty() || package[0] == '.') {
         return name;
