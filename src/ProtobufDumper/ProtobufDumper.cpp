@@ -1,5 +1,6 @@
 #include "ProtobufDumper/ProtobufDumper.h"
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/message.h>
 
 namespace ProtobufDumper {
 
@@ -419,6 +420,201 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     return optionsKv;
 }
 
+// THIS FLUFFER RIGHT HERE UGH
+bool TryGetValue(const google::protobuf::Message &options, int fieldNumber, int& value) {
+    const google::protobuf::Reflection *reflection = options.GetReflection();
+    const google::protobuf::Descriptor *descriptor = options.GetDescriptor();
+
+    const google::protobuf::FieldDescriptor *fieldDescriptor = descriptor->FindFieldByNumber(fieldNumber);
+
+    if (fieldDescriptor && fieldDescriptor->cpp_type() == google::protobuf::FieldDescriptor::CppType::CPPTYPE_INT32) {
+        value = reflection->GetInt32(options, fieldDescriptor);
+        return true;
+    }
+
+    return false;
+}
+
+void ProtobufDumper::DumpOptionsFieldRecursive(const google::protobuf::FieldDescriptorProto &field, const google::protobuf::Message &options, std::map<std::string, std::string> &optionsKv, const std::string &path) {
+    std::string key = (path.empty() ? '(' + field.name() + ')' : path + '.' + field.name());
+
+    if (IsNamedType(field.type()) && !field.type_name().empty()) {
+        std::any fieldData = m_protobufTypeMap.at(field.type_name()).Source;
+
+        if (fieldData.has_value()) {
+            if (fieldData.type() == typeid(google::protobuf::EnumDescriptorProto)) {
+                google::protobuf::EnumDescriptorProto enumProto = std::any_cast<google::protobuf::EnumDescriptorProto>(fieldData);
+                int idx{};
+                if (TryGetValue(options, field.number(), idx)) {
+                    auto value = std::find_if(std::cbegin(enumProto.value()), std::cend(enumProto.value()), [idx](const google::protobuf::EnumValueDescriptorProto &value) -> bool {return value.number() == idx;});
+                    if (value != std::cend(enumProto.value())) {
+                        std::cerr << "Index not found error!" << std::endl;
+                    }
+                    else {
+                        optionsKv.insert(std::make_pair(key, value->name()));
+                    }
+                }
+
+            }
+            else if (fieldData.type() == typeid(google::protobuf::DescriptorProto)) {
+                google::protobuf::DescriptorProto messageProto = std::any_cast<google::protobuf::DescriptorProto>(fieldData);
+
+                const google::protobuf::Descriptor *descriptor = messageProto.GetDescriptor();
+                const google::protobuf::Reflection *reflection = messageProto.GetReflection();
+
+                const google::protobuf::FieldDescriptor *fieldDescriptor = descriptor->FindFieldByNumber(field.number());
+                
+                if (reflection->HasField(options, fieldDescriptor)) {
+                    for (auto subField : messageProto.field()) {
+                        DumpOptionsFieldRecursive(subField, reflection->GetMessage(options, fieldDescriptor), optionsKv, key);
+                    }
+                }
+            }
+        }
+    }
+    else {
+        std::string value{};
+
+        if(ExtractType(options, field, value)) {
+            optionsKv.insert(std::make_pair(key, value));
+        }
+    }
+}
+
+void ProtobufDumper::DumpOptionsMatching(const google::protobuf::FileDescriptorProto &source, const std::string &typeName, const google::protobuf::Message &options, std::map<std::string, std::string> optionsKv) {
+    FileDescriptorProtoSet dependencies = FileDescriptorProtoSet(m_protobufMap.at(source.name()).AllPublicDependencies);
+    dependencies.insert(source);
+
+    for (const auto &[name, typeNode] : m_protobufTypeMap) {
+        if (dependencies.find(typeNode.Proto) != std::end(dependencies) && typeNode.Source.type() == typeid(google::protobuf::FieldDescriptorProto)) {
+            google::protobuf::FieldDescriptorProto field = std::any_cast<google::protobuf::FieldDescriptorProto>(typeNode.Source);
+
+            if (!field.extendee().empty() && field.extendee() == typeName) {
+                DumpOptionsFieldRecursive(field, options, optionsKv, {});
+            }
+        }
+    }
+}
+
+void ProtobufDumper::DumpExtensionDescriptors(const google::protobuf::FileDescriptorProto &source, const google::protobuf::RepeatedPtrField<google::protobuf::FieldDescriptorProto> &fields, std::stringstream &ss, int level, bool &marker) {
+    std::string levelSpace = std::string('\t', level);
+
+    // Replicate C# GroupBy
+    std::map<std::string, std::list<google::protobuf::FieldDescriptorProto>> mappings;
+    for (auto& field : fields) {
+        auto iterator = std::find_if(std::begin(mappings), std::end(mappings), [field](std::pair<std::string, std::list<google::protobuf::FieldDescriptorProto>> item) -> bool {return item.first == field.extendee();});
+        if (iterator == std::end(mappings)) {
+            mappings.insert(std::make_pair(field.extendee(), std::list<google::protobuf::FieldDescriptorProto>({field})));
+        }
+        else {
+            iterator->second.push_back(field);
+        }
+    }
+
+    for (const auto &[extendee, fields] : mappings) {
+        if (extendee.empty()) {
+            throw std::runtime_error("Empty extendee in extension, this should not be possible.");
+        }
+
+        AppendHeadingSpace(ss, marker);
+        ss << levelSpace << "extend " << extendee << " {" << std::endl;
+
+        for (const auto &field : fields) {
+            ss << levelSpace << '\t' << BuildDescriptorDeclaration(source, field) << std::endl;
+        }
+        ss << '}' << std::endl;
+        marker = true;
+    }
+}
+
+void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::DescriptorProto &proto, std::stringstream &ss, int level, bool &marker) {
+    PushDescriptorName(proto);
+
+    std::string levelSpace = std::string('\t', level);
+    bool innerMarker = false;
+
+    AppendHeadingSpace(ss, marker);
+
+    ss << levelSpace << "'message " << proto.name() << " {" << std::endl;
+
+    std::map<std::string, std::string> options = DumpOptions(source, proto.options());
+
+    for (const auto &[key, value] : options) {
+        AppendHeadingSpace(ss, innerMarker);
+        ss << levelSpace << '\t' << "option " << key << " = " << value << ';' << std::endl;
+    }
+
+    if (options.size() > 0) {
+        innerMarker = true;
+    }
+
+    if (proto.extension().size() > 0) {
+        DumpExtensionDescriptors(source, proto.extension(), ss, level + 1, innerMarker);
+    }
+
+    for (const auto &field : proto.nested_type()) {
+        DumpDescriptor(source, field, ss, level + 1, innerMarker);
+    }
+
+    for (const auto &field : proto.enum_type()) {
+        DumpEnumDescriptor(source, field, ss, level + 1, innerMarker);
+    }
+
+    // Replicate C# Where().ToList()
+    std::list<google::protobuf::FieldDescriptorProto> rootFields{};
+    for (const auto &field : proto.field()) {
+        if (field.has_oneof_index()) {
+            rootFields.push_back(field);
+        }
+    }
+
+    for (const auto &field : rootFields) {
+        AppendHeadingSpace(ss, innerMarker);
+        ss << levelSpace << '\t' << BuildDescriptorDeclaration(source, field) << std::endl;
+    }
+
+    if (rootFields.size() > 0) {
+        innerMarker = true;
+    }
+
+    for (int i = 0; i < proto.oneof_decl_size(); i++) {
+        google::protobuf::OneofDescriptorProto oneof = proto.oneof_decl().at(i);
+
+        std::list<google::protobuf::FieldDescriptorProto> fields{};
+        for (const auto &field : proto.field()) {
+            if (field.has_oneof_index() && field.oneof_index() == i) {
+                fields.push_back(field);
+            }
+        }
+
+        AppendHeadingSpace(ss, innerMarker);
+        ss << levelSpace << '\t' << "oneof " << oneof.name() << " {" << std::endl;
+
+        for (const auto &field : fields) {
+            ss << levelSpace << "\t\t"
+               << BuildDescriptorDeclaration(source, field, false) << std::endl;
+        }
+
+        ss << levelSpace << "\t}" << std::endl;
+        innerMarker = true;
+    }
+
+    for (const auto &range : proto.extension_range()) {
+        AppendHeadingSpace(ss, innerMarker);
+
+        // http://code.google.com/apis/protocolbuffers/docs/proto.html#extensions
+        // If your numbering convention might involve extensions having very large numbers as tags, you can specify
+        // that your extension range goes up to the maximum possible field number using the max keyword:
+        // max is 2^29 - 1, or 536,870,911. 
+        ss << levelSpace << '\t' << "extensions " << range.start() << " to " << (range.end() >= 536870911 ? "max" : std::to_string(range.end()));
+    }
+
+    ss << levelSpace << '}' << std::endl;
+    marker = true;
+
+    PopDescriptorName();
+}
+
 std::string ProtobufDumper::GetPackagePath(std::string package, std::string name) {
     if (package.empty() || package[0] == '.') {
         return name;
@@ -436,7 +632,7 @@ std::string ProtobufDumper::ResolveType(const google::protobuf::FieldDescriptorP
         return field.type_name();
     }
 
-    //return GetType(field.type());
+    return GetType(field.type());
 }
 
 void ProtobufDumper::AppendHeadingSpace(std::stringstream &ss, bool &marker) {

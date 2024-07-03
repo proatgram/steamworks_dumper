@@ -68,27 +68,27 @@ namespace ProtobufDumper {
 
             void DumpFileDescriptor(const google::protobuf::FileDescriptorProto &proto, std::stringstream &stringStream);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::FileOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::FileOptions &options);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::FieldOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::FieldOptions &options);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::MessageOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::MessageOptions &options);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumOptions &options);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumValueOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumValueOptions &options);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::ServiceOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::ServiceOptions &options);
 
-            static std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::MethodOptions &options);
+            std::map<std::string, std::string> DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::MethodOptions &options);
 
-            static void DumpOptionsFieldRecursive(const google::protobuf::FieldDescriptorProto &field, const google::protobuf::Message &options, std::map<std::string, std::string> &optionsKv, const std::string &path);
+            void DumpOptionsFieldRecursive(const google::protobuf::FieldDescriptorProto &field, const google::protobuf::Message &options, std::map<std::string, std::string> &optionsKv, const std::string &path);
 
-            static void DumpOptionsMatching(const google::protobuf::FileDescriptorProto &source, const std::string &typeName, const google::protobuf::Message &options, std::map<std::string, std::string> optionsKv);
+            void DumpOptionsMatching(const google::protobuf::FileDescriptorProto &source, const std::string &typeName, const google::protobuf::Message &options, std::map<std::string, std::string> optionsKv);
 
-            static void DumpExtensionDescriptors(const google::protobuf::FileDescriptorProto &source, const google::protobuf::RepeatedPtrField<google::protobuf::FieldDescriptorProto> &fields, std::stringstream &ss, int level, bool &marker);
+            void DumpExtensionDescriptors(const google::protobuf::FileDescriptorProto &source, const google::protobuf::RepeatedPtrField<google::protobuf::FieldDescriptorProto> &fields, std::stringstream &ss, int level, bool &marker);
 
-            void DumpDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::DescriptorProto proto, std::stringstream &ss, int level, bool &marker);
+            void DumpDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::DescriptorProto &proto, std::stringstream &ss, int level, bool &marker);
 
             void DumpEnumDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumDescriptorProto &field, std::stringstream &ss, int level, bool &marker);
 
@@ -104,6 +104,8 @@ namespace ProtobufDumper {
             static std::string GetLabel(google::protobuf::FieldDescriptorProto::Label label);
 
             static std::string GetType(google::protobuf::FieldDescriptorProto::Type type);
+
+            static bool ExtractType(const google::protobuf::Message &data, const google::protobuf::FieldDescriptorProto &field, std::string& value);
 
             static std::string ResolveType(const google::protobuf::FieldDescriptorProto &field);
 
