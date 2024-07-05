@@ -2,6 +2,8 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/message.h>
 
+#include "ProtobufDumper/Util.h"
+
 namespace ProtobufDumper {
 
 ProtobufDumper::ProtobufDumper(const std::list<google::protobuf::FileDescriptorProto> &protobufs) :
@@ -650,6 +652,113 @@ void ProtobufDumper::DumpEnumDescriptor(const google::protobuf::FileDescriptorPr
     marker = true;
 }
 
+void ProtobufDumper::DumpService(const google::protobuf::FileDescriptorProto &source, const google::protobuf::ServiceDescriptorProto &service, std::stringstream &ss, bool &marker) {
+    bool innerMarker = false;
+
+    AppendHeadingSpace(ss, marker);
+    ss << "service " << service.name() << '{' << std::endl;
+
+    std::map<std::string, std::string> rootOptions = DumpOptions(source, service.options());
+
+    for (const auto &[key, value] : rootOptions) {
+        ss << '\t' << "option " << key << " = " << value << ';' << std::endl;
+    }
+
+    if (rootOptions.size() > 0) {
+        innerMarker = true;
+    }
+
+    for (const auto &method : service.method()) {
+        std::string declaration = std::string("\trpc ") + method.name() + std::string(" (") + method.input_type() + std::string(") ") + std::string("returns") + std::string(" (") + method.output_type() + std::string(")");
+        std::map<std::string, std::string> options = DumpOptions(source, method.options());
+
+        AppendHeadingSpace(ss, innerMarker);
+
+        if (options.size() == 0) {
+            ss << declaration << std::endl;
+        }
+        else {
+            ss << declaration << " {" << std::endl;
+
+            for (const auto &[key, value] : options) {
+                ss << "\t\t" << "option " << key << " = " << value << ';' << std::endl;
+            }
+
+            ss << "\t}" << std::endl;
+            innerMarker = true;
+        }
+    }
+
+    ss << "}" << std::endl;
+    marker = true;
+}
+
+std::string ProtobufDumper::BuildDescriptorDeclaration(const google::protobuf::FileDescriptorProto &source, const google::protobuf::FieldDescriptorProto &field, bool emitFieldLabel) {
+    PushDescriptorName(field);
+
+    std::string type = ResolveType(field);
+    std::map<std::string, std::string> options{};
+
+    if (!field.default_value().empty()) {
+        std::string defaultValue = field.default_value();
+
+        if (field.type() == google::protobuf::FieldDescriptorProto_Type::FieldDescriptorProto_Type_TYPE_STRING) {
+            defaultValue = Util::ToLiteral(defaultValue);
+        }
+
+        options.insert(std::make_pair("default", defaultValue));
+    }
+    else if (field.type() == google::protobuf::FieldDescriptorProto_Type::FieldDescriptorProto_Type_TYPE_ENUM && field.label() != google::protobuf::FieldDescriptorProto_Label::FieldDescriptorProto_Label_LABEL_REPEATED) {
+        ProtoTypeNode lookup = m_protobufTypeMap.at(field.type_name());
+
+        if (lookup.Source.type() == typeid(google::protobuf::EnumDescriptorProto)) {
+            google::protobuf::EnumDescriptorProto enumDescriptor = std::any_cast<google::protobuf::EnumDescriptorProto>(lookup.Source);
+            if (enumDescriptor.value().size() > 0) {
+                options.insert(std::make_pair("default", enumDescriptor.value().at(0).name()));
+            }
+        }
+    }
+
+    std::map<std::string, std::string> fieldOptions = DumpOptions(source, field.options());
+
+    for (const auto &[key, value] : fieldOptions) {
+        options.insert_or_assign(key, value);
+    }
+
+    std::stringstream parameters{};
+    if (options.size() > 0) {
+        if (options.size() > 0) {
+            parameters << '[';
+            bool first = true;
+            for (const auto &[key, value] : options) {
+                if (!first) {
+                    parameters << ", ";
+                }
+
+                parameters << key << " = " << value;
+            }
+            parameters << ']';
+            parameters.flush();
+        }
+    }
+
+    PopDescriptorName();
+
+    std::stringstream descriptorDeclarationBuilder{};
+
+    if (emitFieldLabel) {
+        descriptorDeclarationBuilder << GetLabel(field.label()) << " ";
+    }
+
+    descriptorDeclarationBuilder << type << " " << field.name() << " = " << field.number() << parameters.str() << ";";
+
+    return descriptorDeclarationBuilder.str();
+}
+
+constexpr bool ProtobufDumper::IsNamedType(google::protobuf::FieldDescriptorProto::Type type) {
+    return type == google::protobuf::FieldDescriptorProto::Type::FieldDescriptorProto_Type_TYPE_MESSAGE || type == google::protobuf::FieldDescriptorProto::Type::FieldDescriptorProto_Type_TYPE_ENUM;
+}
+
 std::string ProtobufDumper::GetPackagePath(std::string package, std::string name) {
     if (package.empty() || package[0] == '.') {
         return name;
@@ -658,8 +767,140 @@ std::string ProtobufDumper::GetPackagePath(std::string package, std::string name
     return package + "." + name;
 }
 
-constexpr bool ProtobufDumper::IsNamedType(google::protobuf::FieldDescriptorProto::Type type) {
-    return type == google::protobuf::FieldDescriptorProto::Type::FieldDescriptorProto_Type_TYPE_MESSAGE || type == google::protobuf::FieldDescriptorProto::Type::FieldDescriptorProto_Type_TYPE_ENUM;
+std::string ProtobufDumper::GetLabel(google::protobuf::FieldDescriptorProto_Label label) {
+    switch (label) {
+        case google::protobuf::FieldDescriptorProto_Label::FieldDescriptorProto_Label_LABEL_OPTIONAL: {
+            return "optional";
+        }
+        case google::protobuf::FieldDescriptorProto_Label::FieldDescriptorProto_Label_LABEL_REQUIRED: {
+            return "required";
+        }
+        case google::protobuf::FieldDescriptorProto_Label::FieldDescriptorProto_Label_LABEL_REPEATED: {
+            return "repeated";
+        }
+        default: {
+            return {};
+        }
+    }
+}
+
+std::string ProtobufDumper::GetType(google::protobuf::FieldDescriptorProto_Type type ) {
+    switch ( type ) {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT32: {
+            return "int32";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT64: {
+            return "int64";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SINT32: {
+            return "sint32";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SINT64: {
+            return "sint64";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT32: {
+            return "uint32";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT64: {
+            return "uint64";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_STRING: {
+            return "string";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_BOOL: {
+            return "bool";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_BYTES: {
+            return "bytes";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_DOUBLE: {
+            return "double";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_ENUM: {
+            return "enum";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FLOAT: {
+            return "float";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_GROUP: {
+            return "GROUP";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_MESSAGE: {
+            return "message";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FIXED32: {
+            return "fixed32";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FIXED64: {
+            return "fixed64";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SFIXED32: {
+            return "sfixed32";
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SFIXED64: {
+            return "sfixed64";
+        }
+        default: {
+            // C# Used ToString on... something?
+            return {};
+        }
+    }
+}
+
+bool ProtobufDumper::ExtractType(const google::protobuf::Message &data, const google::protobuf::FieldDescriptorProto &field, std::string &value) {
+    const google::protobuf::Reflection *reflection = data.GetReflection();
+    const google::protobuf::Descriptor *descriptor = data.GetDescriptor();
+    const google::protobuf::FieldDescriptor *fieldDescriptor = descriptor->FindFieldByNumber(field.number());
+
+    switch (field.type()) {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_DOUBLE: {
+            value = std::to_string(reflection->GetDouble(data, fieldDescriptor));
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FLOAT: {
+            value = std::to_string(reflection->GetFloat(data, fieldDescriptor));
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SFIXED64:
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SINT64:
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT64: {
+            value = std::to_string(reflection->GetInt64(data, fieldDescriptor));
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FIXED64:
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT64: {
+            value = std::to_string(reflection->GetUInt64(data, fieldDescriptor));
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SFIXED32:
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_SINT32:
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT32: {
+            value = std::to_string(reflection->GetInt32(data, fieldDescriptor));
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_BOOL: {
+            value = (reflection->GetBool(data, fieldDescriptor) ? "true" : "false");
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_STRING: {
+            value = Util::ToLiteral(reflection->GetString(data, fieldDescriptor));
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_BYTES: {
+            // Apperently BYTES are represented as std::string's??
+            value = reflection->GetString(data, fieldDescriptor);
+            return true;
+        }
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FIXED32:
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT32: {
+            value = reflection->GetUInt32(data, fieldDescriptor);
+            return true;
+        }
+        default: {
+            value.clear();
+            return false;
+        }
+    }
 }
 
 std::string ProtobufDumper::ResolveType(const google::protobuf::FieldDescriptorProto &field) {

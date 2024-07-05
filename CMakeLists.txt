@@ -48,6 +48,8 @@ fetchcontent_makeavailable(protobuf)
 add_library(protobuf_dumper
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ProtobufDumper/ProtobufDumper.cpp>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ProtobufDumper/ProtobufDumper.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ProtobufDumper/Util.cpp>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ProtobufDumper/Util.h>
 )
 
 target_link_libraries(protobuf_dumper PUBLIC protobuf)
