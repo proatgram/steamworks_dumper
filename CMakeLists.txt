@@ -50,6 +50,8 @@ add_library(protobuf_dumper
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ProtobufDumper/ProtobufDumper.h>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ProtobufDumper/Util.cpp>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ProtobufDumper/Util.h>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ProtobufDumper/ProtobufCollector.cpp>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/ProtobufDumper/ProtobufCollector.h>
 )
 
 target_link_libraries(protobuf_dumper PUBLIC protobuf)
