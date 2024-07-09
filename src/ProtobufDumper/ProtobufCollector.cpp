@@ -21,3 +21,7 @@ std::optional<std::pair<ProtobufCollector::CandidateResult, std::string>> Protob
 
     return std::nullopt;
 }
+
+const std::list<google::protobuf::FileDescriptorProto>& ProtobufCollector::GetCandidates() const {
+    return m_candidates;
+}

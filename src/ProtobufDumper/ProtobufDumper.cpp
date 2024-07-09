@@ -3,6 +3,10 @@
 #include <google/protobuf/message.h>
 
 #include "ProtobufDumper/Util.h"
+#include "ProtobufDumper/ProtobufCollector.h"
+#include "ProtobufDumper/ExecutableScanner.h"
+
+#include <fstream>
 
 namespace ProtobufDumper {
 
@@ -13,6 +17,98 @@ ProtobufDumper::ProtobufDumper(const std::list<google::protobuf::FileDescriptorP
     m_protobufTypeMap()
 {
 
+}
+
+int ProtobufDumper::DumpProtobufs(const std::list<std::filesystem::path> &targets, const std::filesystem::path &outputDirectory) {
+    std::error_code err{};
+    for (const std::filesystem::path &target : targets) {
+        if (!std::filesystem::exists(target, err)) {
+            throw std::filesystem::filesystem_error(std::string("Cannot dump file: " + target.string() + ": "), err);
+        }
+    }
+
+    if (!std::filesystem::exists(outputDirectory)) {
+        std::filesystem::create_directories(outputDirectory);
+    }
+
+    ProtobufCollector collector = ProtobufCollector();
+    for (const std::filesystem::path &target : targets) {
+        std::cout << "Loading binary " << target.string() << "..." << std::endl;
+        ExecutableScanner::ScanFile(target, [&collector, hasDumpCandidates = !targets.empty(), &outputDirectory](const std::string &name, std::istream &buffer) -> bool {
+            auto iterator = std::find_if(std::cbegin(collector.GetCandidates()), std::cend(collector.GetCandidates()), [&name](const google::protobuf::FileDescriptorProto &proto) -> bool {
+                return proto.name() == name;
+            });
+            
+            if (iterator != std::cend(collector.GetCandidates())) {
+                return true;
+            }
+
+            std::optional<std::pair<ProtobufCollector::CandidateResult, std::string>> result;
+            try {
+                result = collector.TryParseCandidate(name, buffer);
+            }
+            catch (const std::runtime_error &ex) {
+                std::cerr << "Failed to dump Protobuf \"" << name << "\": " << ex.what() << std::endl;
+            }
+
+            if (!result.has_value()) {
+                throw std::runtime_error("Failed to dump Protobuf: Unknown error from ProtobufCollector::TryParseCandidate");
+            }
+
+            switch (result.value().first) {
+                case ProtobufCollector::CandidateResult::OK: {
+                    std::cout << "\033[32m" << "Scanning OK for " << name << "\033[0m" << std::endl;
+                    break;
+                }
+                case ProtobufCollector::CandidateResult::Rescan: {
+                    std::cerr << "\033[36m" << name << " needs rescan: " << result.value().second << "\033[0m" << std::endl;
+                    break;
+                }
+                case ProtobufCollector::CandidateResult::Invalid: {
+                    std::cerr << "\033[31m" << name << " is invalid: " << result.value().second << "\033[0m" << std::endl;
+                    break;
+                }
+            }
+
+            if (hasDumpCandidates && result.value().first == ProtobufCollector::CandidateResult::OK || result.value().first == ProtobufCollector::CandidateResult::Invalid) {
+                std::filesystem::path fileName = outputDirectory;
+                fileName += std::string(name + ".dump");
+
+                try {
+                    std::fstream file;
+                    file.exceptions(std::fstream::badbit);
+                    file.open(fileName);
+
+                    buffer.seekg(0, std::ios::beg);
+                    file << buffer.rdbuf();
+                    file.flush();
+                }
+                catch (const std::exception &ex) {
+                    std::cerr << "Unable to dump: " << ex.what() << std::endl;
+                }
+            }
+
+            return result.value().first == ProtobufCollector::CandidateResult::OK || result.value().first == ProtobufCollector::CandidateResult::Invalid;
+        });
+
+        ProtobufDumper dumper(collector.GetCandidates());
+
+        if (dumper.Analyze()) {
+            dumper.DumpFiles([&outputDirectory](const std::string &name, std::istream &buffer) -> void {
+                std::filesystem::path outputFile = outputDirectory;
+                outputFile += "/" + name;
+
+                std::cout << "  ! Outputting proto to '" << outputFile << "'" << std::endl;
+                std::fstream file(outputFile);
+                file << buffer.rdbuf();
+            });
+        }
+        else {
+            std::cerr << "\033[31m" << "Dump failed. Not all dependencies and types were found." << "\033[0m" << std::endl;
+            return -1;
+        }
+    }
+    return 0;
 }
 
 ProtobufDumper::ProtoTypeNode ProtobufDumper::GetOrCreateTypeNode(const std::string &name, const std::optional<google::protobuf::FileDescriptorProto> &proto, const std::optional<std::any> &source) {
@@ -222,11 +318,11 @@ void ProtobufDumper::RecursiveAnalyzeMessageDescriptor(const google::protobuf::D
     }
 }
 
-void ProtobufDumper::DumpFile(ProcessProtobuf callback) {
+void ProtobufDumper::DumpFiles(ProcessProtobuf callback) {
     for (const google::protobuf::FileDescriptorProto &proto : m_protobufs) {
         std::stringstream ss;
         DumpFileDescriptor(proto, ss);
-        callback(proto.name(), ss.str());
+        callback(proto.name(), ss);
     }
 }
 

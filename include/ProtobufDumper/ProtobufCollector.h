@@ -19,6 +19,8 @@ class ProtobufCollector {
 
         std::optional<std::pair<CandidateResult, std::string>> TryParseCandidate(const std::string &name, std::istream &data);
 
+        const std::list<google::protobuf::FileDescriptorProto>& GetCandidates() const;
+
     private:
         std::list<google::protobuf::FileDescriptorProto> m_candidates;
 };

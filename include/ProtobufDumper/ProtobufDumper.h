@@ -31,7 +31,7 @@ namespace ProtobufDumper {
     class ProtobufDumper {
         public:
             // Delegate in C#, a std::function in C++
-            using ProcessProtobuf = std::function<void(const std::string&, const std::string&)>;
+            using ProcessProtobuf = std::function<void(const std::string&, std::istream &buffer)>;
             using FileDescriptorProtoSet = std::unordered_set<google::protobuf::FileDescriptorProto, FileDescriptorProtoHash, FileDescriptorProtoCompare>;
 
             struct ProtoTypeNode {
@@ -51,8 +51,7 @@ namespace ProtobufDumper {
                 bool Defined;
             };
 
-            // TODO: implement ExtensionPlaceholder
-            class ExtensionPlaceholder;
+            static int DumpProtobufs(const std::list<std::filesystem::path> &targets, const std::filesystem::path &outputDirectory);
 
             ProtobufDumper(const std::list<google::protobuf::FileDescriptorProto> &protobufs);
 
@@ -64,7 +63,7 @@ namespace ProtobufDumper {
 
             void RecursiveAnalyzeMessageDescriptor(const google::protobuf::DescriptorProto &messageType, ProtoNode &protoNode, const std::string &packagePath);
 
-            void DumpFile(ProcessProtobuf callback);
+            void DumpFiles(ProcessProtobuf callback);
 
             void DumpFileDescriptor(const google::protobuf::FileDescriptorProto &proto, std::stringstream &stringStream);
 
