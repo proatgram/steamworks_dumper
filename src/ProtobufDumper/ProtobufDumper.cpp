@@ -112,34 +112,48 @@ int ProtobufDumper::DumpProtobufs(const std::list<std::filesystem::path> &target
 }
 
 ProtobufDumper::ProtoTypeNode ProtobufDumper::GetOrCreateTypeNode(const std::string &name, const std::optional<google::protobuf::FileDescriptorProto> &proto, const std::optional<std::any> &source) {
-    auto iterator = m_protobufTypeMap.find(name);
+    std::map<std::string, ProtoTypeNode>::iterator iterator = m_protobufTypeMap.find(name);
     ProtoTypeNode node;
-    
-    if (iterator != std::cend(m_protobufTypeMap)) {
-        node = iterator->second;
-    }
 
-    if (iterator == std::cend(m_protobufTypeMap)) {
+    if (iterator == std::end(m_protobufTypeMap)) {
         node = {
             .Name = name,
             .Proto = proto.value_or(google::protobuf::FileDescriptorProto{}),
             .Source = source.value_or(std::any{}),
-            .Defined = source->has_value()
+            .Defined = (source.has_value() && source->has_value())
         };
 
         m_protobufTypeMap.insert(std::make_pair(name, node));
     }
-    else if (source->has_value()) {
-        if (node.Defined == false) {
-            throw std::runtime_error("Node is not defined.");
+    else if (source.has_value() && source->has_value()) {
+        if (iterator->second.Defined == true) {
+            std::cerr << "Node is defined: " << name << std::endl;
         }
 
-        node.Proto = proto.value_or(google::protobuf::FileDescriptorProto{});
-        node.Source = source;
+        node = iterator->second;
+        node.Proto = proto.value();
+        node.Source = source.value();
         node.Defined = true;
+        node.Name = name;
+
+        m_protobufTypeMap.insert_or_assign(name, node);
     }
     
     return node;
+}
+
+void add_or_assign(ProtobufDumper::ProtoNode &protoNode, const ProtobufDumper::ProtoTypeNode &typeNode) {
+    std::list<ProtobufDumper::ProtoTypeNode>::iterator iterator = std::find_if(std::begin(protoNode.Types), std::end(protoNode.Types), [name = typeNode.Name](const ProtobufDumper::ProtoTypeNode &element) -> bool {
+        return element.Name == name;
+    });
+    
+    if (iterator != std::end(protoNode.Types) && !iterator->Defined) {
+        protoNode.Types.erase(iterator);
+        protoNode.Types.push_back(typeNode);
+    }
+    else {
+        protoNode.Types.push_back(typeNode);
+    }
 }
 
 bool ProtobufDumper::Analyze() {
@@ -154,18 +168,18 @@ bool ProtobufDumper::Analyze() {
         };
 
         for (const auto &extension : proto.extension()) {
-            protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), extension.name()), proto, extension));
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), extension.name()), proto, extension));
             if (IsNamedType(extension.type()) && !extension.name().empty()) {
-                protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), extension.type_name())));
+                add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), extension.type_name())));
             }
 
             if (!extension.extendee().empty()) {
-                protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), extension.extendee())));
+                add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), extension.extendee())));
             }
         }
 
         for (const auto &enumType : proto.enum_type()) {
-            protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), enumType.name()), proto, enumType));
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), enumType.name()), proto, enumType));
         }
 
         for (const auto &messageType : proto.message_type()) {
@@ -173,15 +187,15 @@ bool ProtobufDumper::Analyze() {
         }
 
         for (const auto &service : proto.service()) {
-            protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), service.name()), proto, service));
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), service.name()), proto, service));
 
             for (auto method : service.method()) {
                 if (!method.input_type().empty()) {
-                    protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), method.input_type())));
+                    add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), method.input_type())));
                 }
 
                 if (!method.output_type().empty()) {
-                    protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(proto.package(), method.output_type())));
+                    add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(proto.package(), method.output_type())));
                 }
             }
         }
@@ -194,13 +208,13 @@ bool ProtobufDumper::Analyze() {
     /* Inspect the file dependencies */
     for (auto &[name, protoNode] : m_protobufMap) {
         for (const auto &dependency : protoNode.Proto.dependency()) {
-            if (dependency.compare(0, 6, "google")== 0) {
+            if (dependency.compare(0, 6, "google") == 0) {
                 continue;
             }
 
             std::map<std::string, ProtoNode>::iterator iterator;
 
-            if ((iterator = m_protobufMap.find(dependency)) != std::cend(m_protobufMap)) {
+            if ((iterator = m_protobufMap.find(dependency)) != std::end(m_protobufMap)) {
                 protoNode.Dependencies.push_back(iterator->second);
             }
             else {
@@ -211,12 +225,16 @@ bool ProtobufDumper::Analyze() {
                 if (missing == std::cend(missingDependencies)) {
                     missingDependency.Name = dependency;
                     missingDependency.Defined = false;
+                    missingDependency.Proto = {};
+                    missingDependency.Dependencies = {};
+                    missingDependency.Types = {};
+                    missingDependency.AllPublicDependencies = {};
                 }
                 else {
                     missingDependency = *missing;
                 }
 
-                protoNode.Dependencies.push_back(missingDependency);
+                protoNode.Dependencies.emplace_back(missingDependency);
             }
         }
     }
@@ -248,15 +266,21 @@ bool ProtobufDumper::Analyze() {
 
         std::list<ProtoTypeNode> undefinedTypes{};
         for (const ProtoTypeNode &typeNode : protoNode.Types) {
-            if (!typeNode.Defined) {
+            if (!typeNode.Name.empty() && !typeNode.Defined) {
                 undefinedTypes.push_back(typeNode);
             }
         }
 
+        for (const auto &[name, node] : m_protobufTypeMap) {
+            if (name == ".NoResponse") {
+                std::cout << "DEFINED: " << (node.Defined ? "true" : "false") << std::endl;
+            }
+        }
+
         if (undefinedTypes.size() > 0) {
-            std::cerr << "\033[1;4;41m" << "Not all types were found for" << name << "\033[0m" << std::endl;
+            std::cerr << "\033[1;4;31m" << "Not all types were found for " << name << "\033[0m" << std::endl;
             
-            std::cerr << "\033[41m";
+            std::cerr << "\033[31m";
             for (const ProtoTypeNode &type : undefinedTypes) {
                 std::cerr << "Type not found: " << type.Name << std::endl;
             }
@@ -291,25 +315,25 @@ void ProtobufDumper::RecursiveAddPublicDependencies(FileDescriptorProtoSet &set,
 }
 
 void ProtobufDumper::RecursiveAnalyzeMessageDescriptor(const google::protobuf::DescriptorProto &messageType, ProtoNode &protoNode, const std::string &packagePath) {
-    protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath( packagePath, messageType.name()), protoNode.Proto, messageType));
+    add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(packagePath, messageType.name()), protoNode.Proto, messageType));
 
     for (auto extension : messageType.extension()) {
         if (!extension.extendee().empty()) {
-            protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(packagePath, extension.extendee())));
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(packagePath, extension.extendee())));
         }
     }
 
     for (auto enumType : messageType.enum_type()) {
-        protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(GetPackagePath(packagePath, messageType.name()), enumType.name()), protoNode.Proto, enumType));
+        add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(GetPackagePath(packagePath, messageType.name()), enumType.name()), protoNode.Proto, enumType));
     }
 
     for (auto field : messageType.field()) {
         if (IsNamedType(field.type()) && !field.type_name().empty()) {
-            protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(packagePath, field.type_name())));
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(packagePath, field.type_name()), protoNode.Proto, field)); // Check out later
         }
 
         if (!field.extendee().empty()) {
-            protoNode.Types.push_back(GetOrCreateTypeNode(GetPackagePath(packagePath, field.extendee())));
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(packagePath, field.extendee())));
         }
     }
 
@@ -442,6 +466,46 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     }
 
     DumpOptionsMatching(source, ".google.protobuf.FileOptions", options, optionsKv);
+
+    return optionsKv;
+}
+
+std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::protobuf::FileDescriptorProto &source, const google::protobuf::FieldOptions &options) {
+    std::map<std::string, std::string> optionsKv{};
+
+    if (options.has_ctype()) {
+        switch (options.ctype()) {
+            case google::protobuf::FieldOptions_CType_STRING: {
+                optionsKv.insert(std::make_pair("ctype", "STRING"));
+                break;
+            }
+            case google::protobuf::FieldOptions_CType_CORD: {
+                optionsKv.insert(std::make_pair("ctype", "CORD"));
+                break;
+            }
+            case google::protobuf::FieldOptions_CType_STRING_PIECE: {
+                optionsKv.insert(std::make_pair("ctype", "STRING_PIECE"));
+            }
+        }
+    }
+
+    if (options.has_deprecated()) {
+        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
+    }
+
+    if (options.has_lazy()) {
+        optionsKv.insert(std::make_pair("lazy", (options.lazy() ? "true" : "false")));
+    }
+
+    if (options.has_packed()) {
+        optionsKv.insert(std::make_pair("packed", (options.packed() ? "true" : "false")));
+    }
+
+    if (options.has_weak()) {
+        optionsKv.insert(std::make_pair("weak", (options.weak() ? "true" : "false")));
+    }
+
+    // options does not have `has_experimental_map_key`
 
     return optionsKv;
 }
@@ -856,11 +920,20 @@ constexpr bool ProtobufDumper::IsNamedType(google::protobuf::FieldDescriptorProt
 }
 
 std::string ProtobufDumper::GetPackagePath(std::string package, std::string name) {
+    std::cout << "Package: " << package << std::endl;
+    std::cout << "Name: " << name << std::endl;
+    std::string modifiedPackage = package;
     if (package.empty() || package[0] == '.') {
-        return name;
+        // Do nothing, keep modifiedPackage as is
+    } else {
+        modifiedPackage = "." + package;
     }
 
-    return package + "." + name;
+    if (name[0] == '.') {
+        return name;
+    } else {
+        return modifiedPackage + "." + name;
+    }
 }
 
 std::string ProtobufDumper::GetLabel(google::protobuf::FieldDescriptorProto_Label label) {
