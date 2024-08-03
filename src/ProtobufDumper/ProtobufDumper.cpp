@@ -111,47 +111,40 @@ int ProtobufDumper::DumpProtobufs(const std::list<std::filesystem::path> &target
     return 0;
 }
 
-ProtobufDumper::ProtoTypeNode ProtobufDumper::GetOrCreateTypeNode(const std::string &name, const std::optional<google::protobuf::FileDescriptorProto> &proto, const std::optional<std::any> &source) {
-    std::map<std::string, ProtoTypeNode>::iterator iterator = m_protobufTypeMap.find(name);
-    ProtoTypeNode node;
+std::shared_ptr<ProtobufDumper::ProtoTypeNode> ProtobufDumper::GetOrCreateTypeNode(const std::string &name, const std::optional<google::protobuf::FileDescriptorProto> &proto, const std::optional<std::any> &source) {
+    std::map<std::string, std::shared_ptr<ProtoTypeNode>>::iterator iterator = m_protobufTypeMap.find(name);
+    std::shared_ptr<ProtoTypeNode> node{};
 
     if (iterator == std::end(m_protobufTypeMap)) {
-        node = {
+        node = std::make_shared<ProtoTypeNode>(ProtoTypeNode{
             .Name = name,
             .Proto = proto.value_or(google::protobuf::FileDescriptorProto{}),
             .Source = source.value_or(std::any{}),
             .Defined = (source.has_value() && source->has_value())
-        };
+        });
 
         m_protobufTypeMap.insert(std::make_pair(name, node));
     }
     else if (source.has_value() && source->has_value()) {
-        if (iterator->second.Defined == true) {
-            std::cerr << "Node is defined: " << name << std::endl;
-        }
-
         node = iterator->second;
-        node.Proto = proto.value();
-        node.Source = source.value();
-        node.Defined = true;
-        node.Name = name;
-
-        m_protobufTypeMap.insert_or_assign(name, node);
+        node->Proto = proto.value();
+        node->Source = source.value();
+        node->Defined = true;
+        node->Name = name;
+    }
+    else {
+        node = iterator->second;
     }
     
     return node;
 }
 
-void add_or_assign(ProtobufDumper::ProtoNode &protoNode, const ProtobufDumper::ProtoTypeNode &typeNode) {
-    std::list<ProtobufDumper::ProtoTypeNode>::iterator iterator = std::find_if(std::begin(protoNode.Types), std::end(protoNode.Types), [name = typeNode.Name](const ProtobufDumper::ProtoTypeNode &element) -> bool {
-        return element.Name == name;
+void add_or_assign(ProtobufDumper::ProtoNode &protoNode, const std::shared_ptr<ProtobufDumper::ProtoTypeNode> &typeNode) {
+    std::list<std::shared_ptr<ProtobufDumper::ProtoTypeNode>>::iterator iterator = std::find_if(std::begin(protoNode.Types), std::end(protoNode.Types), [name = typeNode->Name](const std::shared_ptr<ProtobufDumper::ProtoTypeNode> &element) -> bool {
+        return element->Name == name;
     });
     
-    if (iterator != std::end(protoNode.Types) && !iterator->Defined) {
-        protoNode.Types.erase(iterator);
-        protoNode.Types.push_back(typeNode);
-    }
-    else {
+    if (iterator == std::end(protoNode.Types) || iterator->get()->Defined) {
         protoNode.Types.push_back(typeNode);
     }
 }
@@ -264,16 +257,10 @@ bool ProtobufDumper::Analyze() {
             return false;
         }
 
-        std::list<ProtoTypeNode> undefinedTypes{};
-        for (const ProtoTypeNode &typeNode : protoNode.Types) {
-            if (!typeNode.Name.empty() && !typeNode.Defined) {
+        std::list<std::shared_ptr<ProtoTypeNode>> undefinedTypes{};
+        for (const std::shared_ptr<ProtoTypeNode> &typeNode : protoNode.Types) {
+            if (!typeNode->Name.empty() && !typeNode->Defined) {
                 undefinedTypes.push_back(typeNode);
-            }
-        }
-
-        for (const auto &[name, node] : m_protobufTypeMap) {
-            if (name == ".NoResponse") {
-                std::cout << "DEFINED: " << (node.Defined ? "true" : "false") << std::endl;
             }
         }
 
@@ -281,8 +268,8 @@ bool ProtobufDumper::Analyze() {
             std::cerr << "\033[1;4;31m" << "Not all types were found for " << name << "\033[0m" << std::endl;
             
             std::cerr << "\033[31m";
-            for (const ProtoTypeNode &type : undefinedTypes) {
-                std::cerr << "Type not found: " << type.Name << std::endl;
+            for (const std::shared_ptr<ProtoTypeNode> &type : undefinedTypes) {
+                std::cerr << "Type not found: " << type->Name << std::endl;
             }
             std::cerr << "\033[0m";
             std::cerr.flush();
@@ -601,7 +588,7 @@ void ProtobufDumper::DumpOptionsFieldRecursive(const google::protobuf::FieldDesc
     std::string key = (path.empty() ? '(' + field.name() + ')' : path + '.' + field.name());
 
     if (IsNamedType(field.type()) && !field.type_name().empty()) {
-        std::any fieldData = m_protobufTypeMap.at(field.type_name()).Source;
+        std::any fieldData = m_protobufTypeMap.at(field.type_name())->Source;
 
         if (fieldData.has_value()) {
             if (fieldData.type() == typeid(google::protobuf::EnumDescriptorProto)) {
@@ -648,8 +635,8 @@ void ProtobufDumper::DumpOptionsMatching(const google::protobuf::FileDescriptorP
     dependencies.insert(source);
 
     for (const auto &[name, typeNode] : m_protobufTypeMap) {
-        if (dependencies.find(typeNode.Proto) != std::end(dependencies) && typeNode.Source.type() == typeid(google::protobuf::FieldDescriptorProto)) {
-            google::protobuf::FieldDescriptorProto field = std::any_cast<google::protobuf::FieldDescriptorProto>(typeNode.Source);
+        if (dependencies.find(typeNode->Proto) != std::end(dependencies) && typeNode->Source.type() == typeid(google::protobuf::FieldDescriptorProto)) {
+            google::protobuf::FieldDescriptorProto field = std::any_cast<google::protobuf::FieldDescriptorProto>(typeNode->Source);
 
             if (!field.extendee().empty() && field.extendee() == typeName) {
                 DumpOptionsFieldRecursive(field, options, optionsKv, {});
@@ -869,10 +856,10 @@ std::string ProtobufDumper::BuildDescriptorDeclaration(const google::protobuf::F
         options.insert(std::make_pair("default", defaultValue));
     }
     else if (field.type() == google::protobuf::FieldDescriptorProto_Type::FieldDescriptorProto_Type_TYPE_ENUM && field.label() != google::protobuf::FieldDescriptorProto_Label::FieldDescriptorProto_Label_LABEL_REPEATED) {
-        ProtoTypeNode lookup = m_protobufTypeMap.at(field.type_name());
+        std::shared_ptr<ProtoTypeNode> lookup = m_protobufTypeMap.at(field.type_name());
 
-        if (lookup.Source.type() == typeid(google::protobuf::EnumDescriptorProto)) {
-            google::protobuf::EnumDescriptorProto enumDescriptor = std::any_cast<google::protobuf::EnumDescriptorProto>(lookup.Source);
+        if (lookup->Source.type() == typeid(google::protobuf::EnumDescriptorProto)) {
+            google::protobuf::EnumDescriptorProto enumDescriptor = std::any_cast<google::protobuf::EnumDescriptorProto>(lookup->Source);
             if (enumDescriptor.value().size() > 0) {
                 options.insert(std::make_pair("default", enumDescriptor.value().at(0).name()));
             }
@@ -920,8 +907,6 @@ constexpr bool ProtobufDumper::IsNamedType(google::protobuf::FieldDescriptorProt
 }
 
 std::string ProtobufDumper::GetPackagePath(std::string package, std::string name) {
-    std::cout << "Package: " << package << std::endl;
-    std::cout << "Name: " << name << std::endl;
     std::string modifiedPackage = package;
     if (package.empty() || package[0] == '.') {
         // Do nothing, keep modifiedPackage as is

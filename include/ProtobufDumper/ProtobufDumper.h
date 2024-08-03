@@ -47,7 +47,7 @@ namespace ProtobufDumper {
                 google::protobuf::FileDescriptorProto Proto;
                 std::list<ProtoNode> Dependencies;
                 FileDescriptorProtoSet AllPublicDependencies;
-                std::list<ProtoTypeNode> Types;
+                std::list<std::shared_ptr<ProtoTypeNode>> Types;
                 bool Defined;
             };
 
@@ -55,7 +55,7 @@ namespace ProtobufDumper {
 
             ProtobufDumper(const std::list<google::protobuf::FileDescriptorProto> &protobufs);
 
-            ProtoTypeNode GetOrCreateTypeNode(const std::string &name, const std::optional<google::protobuf::FileDescriptorProto> &proto = std::nullopt, const std::optional<std::any> &source = std::nullopt);
+            std::shared_ptr<ProtoTypeNode> GetOrCreateTypeNode(const std::string &name, const std::optional<google::protobuf::FileDescriptorProto> &proto = std::nullopt, const std::optional<std::any> &source = std::nullopt);
 
             bool Analyze();
 
@@ -122,6 +122,6 @@ namespace ProtobufDumper {
             std::list<google::protobuf::FileDescriptorProto> m_protobufs;
             std::stack<std::string> m_messageNameStack;
             std::map<std::string, ProtoNode> m_protobufMap;
-            std::map<std::string, ProtoTypeNode> m_protobufTypeMap;
+            std::map<std::string, std::shared_ptr<ProtoTypeNode>> m_protobufTypeMap;
     };
 } // namespace ProtobufDumper
