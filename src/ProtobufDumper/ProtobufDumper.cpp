@@ -73,7 +73,7 @@ int ProtobufDumper::DumpProtobufs(const std::list<std::filesystem::path> &target
 
             if (hasDumpCandidates && result.value().first == ProtobufCollector::CandidateResult::OK || result.value().first == ProtobufCollector::CandidateResult::Invalid) {
                 std::filesystem::path fileName = outputDirectory;
-                fileName += std::string(name + ".dump");
+                fileName += std::string("/" + name + ".dump");
 
                 try {
                     std::fstream file;
