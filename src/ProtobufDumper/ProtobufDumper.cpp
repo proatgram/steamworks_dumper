@@ -1,5 +1,6 @@
 #include "ProtobufDumper/ProtobufDumper.h"
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/extension_set.h>
 #include <google/protobuf/message.h>
 
 #include "ProtobufDumper/Util.h"
@@ -77,7 +78,7 @@ int ProtobufDumper::DumpProtobufs(const std::list<std::filesystem::path> &target
                 try {
                     std::fstream file;
                     file.exceptions(std::fstream::badbit);
-                    file.open(fileName);
+                    file.open(fileName, std::fstream::out | std::fstream::trunc);
 
                     buffer.seekg(0, std::ios::beg);
                     file << buffer.rdbuf();
@@ -98,9 +99,12 @@ int ProtobufDumper::DumpProtobufs(const std::list<std::filesystem::path> &target
                 std::filesystem::path outputFile = outputDirectory;
                 outputFile += "/" + name;
 
-                std::cout << "  ! Outputting proto to '" << outputFile << "'" << std::endl;
-                std::fstream file(outputFile);
+                std::cout << "  ! Outputting proto to " << outputFile << std::endl;
+                std::filesystem::create_directories(outputFile.parent_path());
+                std::fstream file(outputFile, std::fstream::out | std::fstream::trunc);
+
                 file << buffer.rdbuf();
+                file.flush();
             });
         }
         else {
@@ -316,7 +320,7 @@ void ProtobufDumper::RecursiveAnalyzeMessageDescriptor(const google::protobuf::D
 
     for (auto field : messageType.field()) {
         if (IsNamedType(field.type()) && !field.type_name().empty()) {
-            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(packagePath, field.type_name()), protoNode.Proto, field)); // Check out later
+            add_or_assign(protoNode, GetOrCreateTypeNode(GetPackagePath(packagePath, field.type_name())));
         }
 
         if (!field.extendee().empty()) {
@@ -346,8 +350,8 @@ void ProtobufDumper::DumpFileDescriptor(const google::protobuf::FileDescriptorPr
 
     for (int i = 0; i < proto.dependency().size(); i++) {
         std::string dependency = proto.dependency().at(i);
-        std::string modifier = std::find(proto.public_dependency().cbegin(), proto.public_dependency().cend(), i) == std::end(proto.public_dependency()) ? "public" : "";
-        ss << "import " << modifier << "\"" << dependency << "\";" << std::endl;
+        std::string modifier = std::find(proto.public_dependency().cbegin(), proto.public_dependency().cend(), i) != std::end(proto.public_dependency()) ? " public" : ""; // TODO: Public dependency not working right
+        ss << "import" << modifier << " \"" << dependency << "\";" << std::endl;
         marker = true;
     }
 
@@ -360,7 +364,7 @@ void ProtobufDumper::DumpFileDescriptor(const google::protobuf::FileDescriptorPr
 
     for (const auto &[key, value] : options) {
         AppendHeadingSpace(ss, marker);
-        ss << "option " << key << " = " << value << std::endl;
+        ss << "option " << key << " = " << value << ";" << std::endl;
     }
 
     if (options.size() > 0) {
@@ -569,7 +573,6 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     return optionsKv;
 }
 
-// THIS FLUFFER RIGHT HERE UGH
 bool TryGetValue(const google::protobuf::Message &options, int fieldNumber, int& value) {
     const google::protobuf::Reflection *reflection = options.GetReflection();
     const google::protobuf::Descriptor *descriptor = options.GetDescriptor();
@@ -585,7 +588,7 @@ bool TryGetValue(const google::protobuf::Message &options, int fieldNumber, int&
 }
 
 void ProtobufDumper::DumpOptionsFieldRecursive(const google::protobuf::FieldDescriptorProto &field, const google::protobuf::Message &options, std::map<std::string, std::string> &optionsKv, const std::string &path) {
-    std::string key = (path.empty() ? '(' + field.name() + ')' : path + '.' + field.name());
+    std::string key = (path.empty() ? "(" + field.name() + ")" : path + "." + field.name());
 
     if (IsNamedType(field.type()) && !field.type_name().empty()) {
         std::any fieldData = m_protobufTypeMap.at(field.type_name())->Source;
@@ -646,7 +649,7 @@ void ProtobufDumper::DumpOptionsMatching(const google::protobuf::FileDescriptorP
 }
 
 void ProtobufDumper::DumpExtensionDescriptors(const google::protobuf::FileDescriptorProto &source, const google::protobuf::RepeatedPtrField<google::protobuf::FieldDescriptorProto> &fields, std::stringstream &ss, int level, bool &marker) {
-    std::string levelSpace = std::string('\t', level);
+    std::string levelSpace = std::string("\t", level);
 
     // Replicate C# GroupBy
     std::map<std::string, std::list<google::protobuf::FieldDescriptorProto>> mappings;
@@ -669,9 +672,9 @@ void ProtobufDumper::DumpExtensionDescriptors(const google::protobuf::FileDescri
         ss << levelSpace << "extend " << extendee << " {" << std::endl;
 
         for (const auto &field : fields) {
-            ss << levelSpace << '\t' << BuildDescriptorDeclaration(source, field) << std::endl;
+            ss << levelSpace << "\t" << BuildDescriptorDeclaration(source, field) << std::endl;
         }
-        ss << '}' << std::endl;
+        ss << "}" << std::endl;
         marker = true;
     }
 }
@@ -679,18 +682,18 @@ void ProtobufDumper::DumpExtensionDescriptors(const google::protobuf::FileDescri
 void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::DescriptorProto &proto, std::stringstream &ss, int level, bool &marker) {
     PushDescriptorName(proto);
 
-    std::string levelSpace = std::string('\t', level);
+    std::string levelSpace = std::string("\t", level);
     bool innerMarker = false;
 
     AppendHeadingSpace(ss, marker);
 
-    ss << levelSpace << "'message " << proto.name() << " {" << std::endl;
+    ss << levelSpace << "message " << proto.name() << " {" << std::endl;
 
     std::map<std::string, std::string> options = DumpOptions(source, proto.options());
 
     for (const auto &[key, value] : options) {
         AppendHeadingSpace(ss, innerMarker);
-        ss << levelSpace << '\t' << "option " << key << " = " << value << ';' << std::endl;
+        ss << levelSpace << "\t" << "option " << key << " = " << value << ";" << std::endl;
     }
 
     if (options.size() > 0) {
@@ -712,14 +715,14 @@ void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto 
     // Replicate C# Where().ToList()
     std::list<google::protobuf::FieldDescriptorProto> rootFields{};
     for (const auto &field : proto.field()) {
-        if (field.has_oneof_index()) {
+        if (!field.has_oneof_index()) {
             rootFields.push_back(field);
         }
     }
 
     for (const auto &field : rootFields) {
         AppendHeadingSpace(ss, innerMarker);
-        ss << levelSpace << '\t' << BuildDescriptorDeclaration(source, field) << std::endl;
+        ss << levelSpace << "\t" << BuildDescriptorDeclaration(source, field) << std::endl;
     }
 
     if (rootFields.size() > 0) {
@@ -737,7 +740,7 @@ void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto 
         }
 
         AppendHeadingSpace(ss, innerMarker);
-        ss << levelSpace << '\t' << "oneof " << oneof.name() << " {" << std::endl;
+        ss << levelSpace << "\t" << "oneof " << oneof.name() << " {" << std::endl;
 
         for (const auto &field : fields) {
             ss << levelSpace << "\t\t"
@@ -755,23 +758,23 @@ void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto 
         // If your numbering convention might involve extensions having very large numbers as tags, you can specify
         // that your extension range goes up to the maximum possible field number using the max keyword:
         // max is 2^29 - 1, or 536,870,911. 
-        ss << levelSpace << '\t' << "extensions " << range.start() << " to " << (range.end() >= 536870911 ? "max" : std::to_string(range.end()));
+        ss << levelSpace << "\t" << "extensions " << range.start() << " to " << (range.end() >= 536870911 ? "max" : std::to_string(range.end()));
     }
 
-    ss << levelSpace << '}' << std::endl;
+    ss << levelSpace << "}" << std::endl;
     marker = true;
 
     PopDescriptorName();
 }
 
 void ProtobufDumper::DumpEnumDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumDescriptorProto &field, std::stringstream &ss, int level, bool &marker) {
-    std::string levelSpace('\t', level);
+    std::string levelSpace("\t", level);
 
     AppendHeadingSpace(ss, marker);
     ss << levelSpace << "enum " << field.name() << " {" << std::endl;
 
     for (const auto &[key, value] : DumpOptions(source, field.options())) {
-        ss << levelSpace << '\t' << "option " << key << " = " << value << ";" << std::endl;
+        ss << levelSpace << "\t" << "option " << key << " = " << value << ";" << std::endl;
     }
 
     for (const auto &enumValue : field.value()) {
@@ -779,20 +782,20 @@ void ProtobufDumper::DumpEnumDescriptor(const google::protobuf::FileDescriptorPr
 
         std::stringstream parameters{};
         if (options.size() > 0) {
-            parameters << '[';
+            parameters << " [";
             bool first = true;
             for (const auto &[key, value] : options) {
                 if (!first) {
                     parameters << ", ";
                 }
 
-                parameters << key << " = " << value;
+                parameters << key << " = " << value << ";";
             }
-            parameters << ']';
+            parameters << "]";
             parameters.flush();
         }
 
-        ss << levelSpace << '\t' << enumValue.name() << " = " << enumValue.number() << parameters.str() << std::endl;
+        ss << levelSpace << "\t" << enumValue.name() << " = " << enumValue.number() << parameters.str() << ";" << std::endl;
     }
 
     ss << levelSpace << "}" << std::endl;
@@ -803,12 +806,12 @@ void ProtobufDumper::DumpService(const google::protobuf::FileDescriptorProto &so
     bool innerMarker = false;
 
     AppendHeadingSpace(ss, marker);
-    ss << "service " << service.name() << '{' << std::endl;
+    ss << "service " << service.name() << " {" << std::endl;
 
     std::map<std::string, std::string> rootOptions = DumpOptions(source, service.options());
 
     for (const auto &[key, value] : rootOptions) {
-        ss << '\t' << "option " << key << " = " << value << ';' << std::endl;
+        ss << "\t" << "option " << key << " = " << value << ";" << std::endl;
     }
 
     if (rootOptions.size() > 0) {
@@ -816,7 +819,7 @@ void ProtobufDumper::DumpService(const google::protobuf::FileDescriptorProto &so
     }
 
     for (const auto &method : service.method()) {
-        std::string declaration = std::string("\trpc ") + method.name() + std::string(" (") + method.input_type() + std::string(") ") + std::string("returns") + std::string(" (") + method.output_type() + std::string(")");
+        std::string declaration = std::string("\trpc ") + method.name() + std::string(" (") + method.input_type() + std::string(") ") + std::string("returns") + std::string(" (") + method.output_type() + std::string(")") + std::string(";");
         std::map<std::string, std::string> options = DumpOptions(source, method.options());
 
         AppendHeadingSpace(ss, innerMarker);
@@ -828,7 +831,7 @@ void ProtobufDumper::DumpService(const google::protobuf::FileDescriptorProto &so
             ss << declaration << " {" << std::endl;
 
             for (const auto &[key, value] : options) {
-                ss << "\t\t" << "option " << key << " = " << value << ';' << std::endl;
+                ss << "\t\t" << "option " << key << " = " << value << ";" << std::endl;
             }
 
             ss << "\t}" << std::endl;
@@ -875,7 +878,7 @@ std::string ProtobufDumper::BuildDescriptorDeclaration(const google::protobuf::F
     std::stringstream parameters{};
     if (options.size() > 0) {
         if (options.size() > 0) {
-            parameters << '[';
+            parameters << " [";
             bool first = true;
             for (const auto &[key, value] : options) {
                 if (!first) {
@@ -884,7 +887,7 @@ std::string ProtobufDumper::BuildDescriptorDeclaration(const google::protobuf::F
 
                 parameters << key << " = " << value;
             }
-            parameters << ']';
+            parameters << "]";
             parameters.flush();
         }
     }
@@ -898,6 +901,7 @@ std::string ProtobufDumper::BuildDescriptorDeclaration(const google::protobuf::F
     }
 
     descriptorDeclarationBuilder << type << " " << field.name() << " = " << field.number() << parameters.str() << ";";
+    descriptorDeclarationBuilder.flush();
 
     return descriptorDeclarationBuilder.str();
 }
@@ -1004,56 +1008,56 @@ std::string ProtobufDumper::GetType(google::protobuf::FieldDescriptorProto_Type 
 bool ProtobufDumper::ExtractType(const google::protobuf::Message &data, const google::protobuf::FieldDescriptorProto &field, std::string &value) {
     const google::protobuf::Reflection *reflection = data.GetReflection();
     const google::protobuf::Descriptor *descriptor = data.GetDescriptor();
+    
+    // Attempt to find the field descriptor using the extension number
     const google::protobuf::FieldDescriptor *fieldDescriptor = descriptor->FindFieldByNumber(field.number());
 
+    if (!fieldDescriptor) {
+        // Attempt to find as an extension
+        fieldDescriptor = reflection->FindKnownExtensionByNumber(field.number() - 50000);
+    }
+
+    if (!fieldDescriptor) {
+        return false;
+    }
+
     switch (field.type()) {
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_DOUBLE: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_DOUBLE:
             value = std::to_string(reflection->GetDouble(data, fieldDescriptor));
             return true;
-        }
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_FLOAT: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_FLOAT:
             value = std::to_string(reflection->GetFloat(data, fieldDescriptor));
             return true;
-        }
         case google::protobuf::FieldDescriptorProto_Type_TYPE_SFIXED64:
         case google::protobuf::FieldDescriptorProto_Type_TYPE_SINT64:
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT64: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT64:
             value = std::to_string(reflection->GetInt64(data, fieldDescriptor));
             return true;
-        }
         case google::protobuf::FieldDescriptorProto_Type_TYPE_FIXED64:
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT64: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT64:
             value = std::to_string(reflection->GetUInt64(data, fieldDescriptor));
             return true;
-        }
         case google::protobuf::FieldDescriptorProto_Type_TYPE_SFIXED32:
         case google::protobuf::FieldDescriptorProto_Type_TYPE_SINT32:
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT32: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_INT32:
             value = std::to_string(reflection->GetInt32(data, fieldDescriptor));
             return true;
-        }
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_BOOL: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_BOOL:
             value = (reflection->GetBool(data, fieldDescriptor) ? "true" : "false");
             return true;
-        }
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_STRING: {
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_STRING:
             value = Util::ToLiteral(reflection->GetString(data, fieldDescriptor));
             return true;
-        }
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_BYTES: {
-            // Apperently BYTES are represented as std::string's??
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_BYTES:
             value = reflection->GetString(data, fieldDescriptor);
             return true;
-        }
         case google::protobuf::FieldDescriptorProto_Type_TYPE_FIXED32:
-        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT32: {
-            value = reflection->GetUInt32(data, fieldDescriptor);
+        case google::protobuf::FieldDescriptorProto_Type_TYPE_UINT32:
+            value = std::to_string(reflection->GetUInt32(data, fieldDescriptor));
             return true;
-        }
-        default: {
+        default:
             value.clear();
             return false;
-        }
     }
 }
 
