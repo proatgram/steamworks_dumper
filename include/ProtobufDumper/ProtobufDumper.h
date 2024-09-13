@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <sstream>
+#include <filesystem>
 
 #include <google/protobuf/descriptor.pb.h>
 
