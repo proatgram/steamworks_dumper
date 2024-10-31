@@ -758,7 +758,7 @@ void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto 
         // If your numbering convention might involve extensions having very large numbers as tags, you can specify
         // that your extension range goes up to the maximum possible field number using the max keyword:
         // max is 2^29 - 1, or 536,870,911. 
-        ss << levelSpace << "\t" << "extensions " << range.start() << " to " << (range.end() >= 536870911 ? "max" : std::to_string(range.end()));
+        ss << levelSpace << "\t" << "extensions " << range.start() << " to " << (range.end() >= 536870911 ? "max" : std::to_string(range.end())) << ";\n";
     }
 
     ss << levelSpace << "}" << std::endl;
