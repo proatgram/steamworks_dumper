@@ -481,7 +481,7 @@ std::map<std::string, std::string> ProtobufDumper::DumpOptions(const google::pro
     }
 
     if (options.has_deprecated()) {
-        optionsKv.insert(std::make_pair("depricated", (options.deprecated() ? "true" : "false")));
+        optionsKv.insert(std::make_pair("deprecated", (options.deprecated() ? "true" : "false")));
     }
 
     if (options.has_lazy()) {
