@@ -649,7 +649,7 @@ void ProtobufDumper::DumpOptionsMatching(const google::protobuf::FileDescriptorP
 }
 
 void ProtobufDumper::DumpExtensionDescriptors(const google::protobuf::FileDescriptorProto &source, const google::protobuf::RepeatedPtrField<google::protobuf::FieldDescriptorProto> &fields, std::stringstream &ss, int level, bool &marker) {
-    std::string levelSpace = std::string("\t", level);
+    std::string levelSpace = std::string(level * 4, ' ');
 
     // Replicate C# GroupBy
     std::map<std::string, std::list<google::protobuf::FieldDescriptorProto>> mappings;
@@ -682,7 +682,7 @@ void ProtobufDumper::DumpExtensionDescriptors(const google::protobuf::FileDescri
 void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::DescriptorProto &proto, std::stringstream &ss, int level, bool &marker) {
     PushDescriptorName(proto);
 
-    std::string levelSpace = std::string("\t", level);
+    std::string levelSpace = std::string(level * 4, ' ');
     bool innerMarker = false;
 
     AppendHeadingSpace(ss, marker);
@@ -768,7 +768,7 @@ void ProtobufDumper::DumpDescriptor(const google::protobuf::FileDescriptorProto 
 }
 
 void ProtobufDumper::DumpEnumDescriptor(const google::protobuf::FileDescriptorProto &source, const google::protobuf::EnumDescriptorProto &field, std::stringstream &ss, int level, bool &marker) {
-    std::string levelSpace("\t", level);
+    std::string levelSpace(level * 4, ' ');
 
     AppendHeadingSpace(ss, marker);
     ss << levelSpace << "enum " << field.name() << " {" << std::endl;
